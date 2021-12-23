@@ -1,4 +1,4 @@
 build/
 *.swp
 VulkanSDK/
-GLFW/
+glfw/
