@@ -4,3 +4,5 @@ VulkanSDK/
 glfw/
 .cache/
 compile_commands.json
+run.sh
+
