@@ -2,3 +2,5 @@ build/
 *.swp
 VulkanSDK/
 glfw/
+.cache/
+compile_commands.json
