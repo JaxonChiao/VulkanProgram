@@ -6,3 +6,4 @@ compile_commands.json
 run.sh
 cmake-build-vulkanprogram
 cmake-build-debug
+VulkanSDK
