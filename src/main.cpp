@@ -10,6 +10,7 @@ public:
     void run()
     {
         initVulkan();
+        cleanup();
     }
 
 private:
@@ -63,6 +64,11 @@ private:
 
 		// Choose which GPU to use
         vulkanProgramInfo.GPU = GPUs[0];
+    }
+
+    void cleanup()
+    {
+        vkDestroyInstance(vulkanProgramInfo.vulkanInstance, nullptr);
     }
 };
 
