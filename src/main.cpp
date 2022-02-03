@@ -1,5 +1,7 @@
 #include <bitset>
+
 #define GLFW_INCLUDE_VULKAN
+
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <vector>
@@ -13,19 +15,31 @@ class VulkanProgram
 public:
     void run()
     {
+        // Create a window for presentation
         glfwInit();
-        addAdditionalInstanceExtensions();
-        initVulkan();
-        createDebugMessenger();
-        pickPhysicalDevice();
-        addAdditionalDeviceExtensions();
-        createDeviceAndGraphicsQueue();
 
-        // Graphics Setup
+        // Allow window system to add its own required
+        // instance extensions
+        addAdditionalInstanceExtensions();
+
+        // After all the instance extensions are added,
+        // create vulkan instance
+        initVulkan();
+        createDebugMessenger();   // Create a debugger for vulkan instance
+
+        // Connect vulkan instance and window system
         createWindowAndSurface();
+
+        // Pick a physical device for rendering
+        pickPhysicalDevice();
+
+        // Adds any required device extensions before create a logical device
+        addAdditionalDeviceExtensions();
+        createDeviceAndQueues();
 
         // Program Loop
         programLoop();
+
         cleanup();
     }
 
@@ -34,9 +48,11 @@ private:
 
     VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
 
+    // All the Vulkan program related data
     struct VulkanProgramInfo
     {
-        GLFWwindow *window;
+        GLFWwindow *window = nullptr;
+
         VkInstance vulkanInstance = VK_NULL_HANDLE;
 
         VkPhysicalDevice GPU = VK_NULL_HANDLE;
@@ -45,10 +61,15 @@ private:
 
         VkQueue graphicsQueue = VK_NULL_HANDLE;
 
+        VkQueue presentQueue = VK_NULL_HANDLE;
+
         VkSurfaceKHR windowSurface = VK_NULL_HANDLE;
 
         uint32_t graphicsQueueFamilyIndex = 0;
         bool graphicsQueueFound = false;
+
+        uint32_t presentQueueFamilyIndex = 0;
+        bool presentQueueFound = false;
 
         std::vector<const char *> layerEnabled =
                 {
@@ -127,7 +148,7 @@ private:
         vulkanProgramInfo.GPU = physicalDevices[0];
     }
 
-    void createDeviceAndGraphicsQueue()
+    void createDeviceAndQueues()
     {
         uint32_t queueFamilyPptCount;
         vkGetPhysicalDeviceQueueFamilyProperties(vulkanProgramInfo.GPU,
@@ -155,6 +176,22 @@ private:
             std::cout << "Graphics queue not found!\n";
             exit(-1);
         }
+
+        VkBool32 presentSupport;
+        vkResult = vkGetPhysicalDeviceSurfaceSupportKHR(vulkanProgramInfo.GPU,
+                                                        vulkanProgramInfo.presentQueueFamilyIndex,
+                                                        vulkanProgramInfo.windowSurface,
+                                                        &presentSupport);
+
+        if (presentSupport != VK_TRUE)
+        {
+            std::cout << "Chosen queue does not support present" << std::endl;
+            exit(-1);
+        }
+        // Because I know the graphics and present queues are going to be
+        // the same, so just copy the graphics queue values to present queue
+        vulkanProgramInfo.presentQueueFamilyIndex = vulkanProgramInfo.graphicsQueueFamilyIndex;
+        vulkanProgramInfo.presentQueueFound =  true;
 
         // Logical Device Creation
         // Fill queue creation info first
@@ -190,6 +227,11 @@ private:
                          vulkanProgramInfo.graphicsQueueFamilyIndex,
                          0,
                          &vulkanProgramInfo.graphicsQueue);
+
+        vkGetDeviceQueue(vulkanProgramInfo.renderDevice,
+                         vulkanProgramInfo.presentQueueFamilyIndex,
+                         0,
+                         &vulkanProgramInfo.presentQueue);
     }
 
     void createWindowAndSurface()
@@ -211,7 +253,7 @@ private:
 
     void programLoop()
     {
-        while(!glfwWindowShouldClose(vulkanProgramInfo.window))
+        while (!glfwWindowShouldClose(vulkanProgramInfo.window))
         {
             glfwPollEvents();
         }
@@ -264,7 +306,7 @@ private:
 
         // Add extensions required by GLFW
         uint32_t glfwRequiredExtensionCount;
-        const char** glfwInstanceExtensions;
+        const char **glfwInstanceExtensions;
         glfwInstanceExtensions = glfwGetRequiredInstanceExtensions(&glfwRequiredExtensionCount);
 
         if (glfwInstanceExtensions == nullptr)
@@ -273,7 +315,7 @@ private:
             exit(-1);
         }
 
-        for (std::size_t i = 0; i < glfwRequiredExtensionCount;i++)
+        for (std::size_t i = 0; i < glfwRequiredExtensionCount; i++)
         {
             vulkanProgramInfo.instanceExtensionsEnabled.push_back(glfwInstanceExtensions[i]);
         }
