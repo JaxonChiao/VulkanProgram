@@ -1,20 +1,31 @@
 #include <bitset>
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
 #include <iostream>
-#include "vulkan.h"
 #include <vector>
 #include <cstdlib>
+
+const int windowWidth = 800;
+const int windowHeight = 600;
 
 class VulkanProgram
 {
 public:
     void run()
     {
+        glfwInit();
         addAdditionalInstanceExtensions();
         initVulkan();
         createDebugMessenger();
         pickPhysicalDevice();
         addAdditionalDeviceExtensions();
         createDeviceAndGraphicsQueue();
+
+        // Graphics Setup
+        createWindowAndSurface();
+
+        // Program Loop
+        programLoop();
         cleanup();
     }
 
@@ -25,6 +36,7 @@ private:
 
     struct VulkanProgramInfo
     {
+        GLFWwindow *window;
         VkInstance vulkanInstance = VK_NULL_HANDLE;
 
         VkPhysicalDevice GPU = VK_NULL_HANDLE;
@@ -32,6 +44,8 @@ private:
         VkDevice renderDevice = VK_NULL_HANDLE;
 
         VkQueue graphicsQueue = VK_NULL_HANDLE;
+
+        VkSurfaceKHR windowSurface = VK_NULL_HANDLE;
 
         uint32_t graphicsQueueFamilyIndex = 0;
         bool graphicsQueueFound = false;
@@ -178,6 +192,31 @@ private:
                          &vulkanProgramInfo.graphicsQueue);
     }
 
+    void createWindowAndSurface()
+    {
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+
+        vulkanProgramInfo.window = glfwCreateWindow(windowWidth,
+                                                    windowHeight,
+                                                    "Vulkan Program",
+                                                    nullptr,
+                                                    nullptr);
+
+        vkResult = glfwCreateWindowSurface(vulkanProgramInfo.vulkanInstance,
+                                           vulkanProgramInfo.window,
+                                           nullptr,
+                                           &vulkanProgramInfo.windowSurface);
+    }
+
+    void programLoop()
+    {
+        while(!glfwWindowShouldClose(vulkanProgramInfo.window))
+        {
+            glfwPollEvents();
+        }
+    }
+
     void cleanup() const
     {
         vkDestroyDevice(vulkanProgramInfo.renderDevice,
@@ -191,8 +230,14 @@ private:
         destroyDebugMessenger(vulkanProgramInfo.vulkanInstance,
                               debugMessenger,
                               nullptr);
+        vkDestroySurfaceKHR(vulkanProgramInfo.vulkanInstance,
+                            vulkanProgramInfo.windowSurface,
+                            nullptr);
 
         vkDestroyInstance(vulkanProgramInfo.vulkanInstance, nullptr);
+
+        glfwDestroyWindow(vulkanProgramInfo.window);
+
     }
 
     void addAdditionalInstanceExtensions()
@@ -216,6 +261,23 @@ private:
                 vulkanProgramInfo.instanceExtensionsEnabled.push_back("VK_KHR_get_physical_device_properties2");
             }
         }
+
+        // Add extensions required by GLFW
+        uint32_t glfwRequiredExtensionCount;
+        const char** glfwInstanceExtensions;
+        glfwInstanceExtensions = glfwGetRequiredInstanceExtensions(&glfwRequiredExtensionCount);
+
+        if (glfwInstanceExtensions == nullptr)
+        {
+            std::cout << "Failed to get instance extensions required by glfw" << std::endl;
+            exit(-1);
+        }
+
+        for (std::size_t i = 0; i < glfwRequiredExtensionCount;i++)
+        {
+            vulkanProgramInfo.instanceExtensionsEnabled.push_back(glfwInstanceExtensions[i]);
+        }
+
     }
 
     void addAdditionalDeviceExtensions()
