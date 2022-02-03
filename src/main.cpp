@@ -11,6 +11,7 @@ public:
     {
         initVulkan();
         createDebugMessenger();
+        pickPhysicalDevice();
         cleanup();
     }
 
@@ -130,6 +131,21 @@ private:
                                   &debugMessenger);
     }
 
+    void pickPhysicalDevice()
+    {
+        uint32_t physicalDeviceCount;
+        vkEnumeratePhysicalDevices(vulkanProgramInfo.vulkanInstance,
+                                   &physicalDeviceCount,
+                                   nullptr);
+        std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
+
+        vkEnumeratePhysicalDevices(vulkanProgramInfo.vulkanInstance,
+                                   &physicalDeviceCount,
+                                   physicalDevices.data());
+
+        vulkanProgramInfo.GPU = physicalDevices[0];
+    }
+
     void cleanup() const
     {
         // Find function to destroy debug messenger
@@ -142,9 +158,6 @@ private:
                               nullptr);
 
         vkDestroyInstance(vulkanProgramInfo.vulkanInstance, nullptr);
-
-
-
     }
 
     static void fillInDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo)
