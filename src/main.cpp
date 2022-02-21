@@ -257,9 +257,16 @@ private:
     {
         // Choose surface format
         VkSurfaceFormatKHR chosenSurfaceFormat;
-        chooseSurfaceFormat(chosenSurfaceFormat);
+        chosenSurfaceFormat = chooseSurfaceFormat();
 
         // Choose presentation mode
+        VkPresentModeKHR swapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+        swapchainPresentMode = choosePresentMode();
+
+        // Choose swapchain extent
+        VkExtent2D swapchainExtent;
+        swapchainExtent = chooseSwapchainExtent();
+
     }
 
     void programLoop()
@@ -362,7 +369,7 @@ private:
     /*
      * Choose a surface format for swapchain
      */
-    void chooseSurfaceFormat(VkSurfaceFormatKHR &chosenSurfaceFormat)
+    VkSurfaceFormatKHR chooseSurfaceFormat()
     {
         uint32_t surfaceFormatCount = 0;
         vkGetPhysicalDeviceSurfaceFormatsKHR(vulkanProgramInfo.GPU,
@@ -382,13 +389,42 @@ private:
             if (surfaceFormats[i].format == VK_FORMAT_B8G8R8A8_SRGB &&
                 surfaceFormats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
             {
-               chosenSurfaceFormat = surfaceFormats[i];
-               return;
+               return surfaceFormats[i];
             }
         }
-        
-        // If VK_FORMAT_B8G8R8A8_SRGB is not avaliable just pick the first one
-        chosenSurfaceFormat = surfaceFormats[0];
+
+        // If VK_FORMAT_B8G8R8A8_SRGB is not available just pick the first one
+        return surfaceFormats[0];
+    }
+
+    VkPresentModeKHR choosePresentMode()
+    {
+        uint32_t presentModeCount;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(vulkanProgramInfo.GPU,
+                                                  vulkanProgramInfo.windowSurface,
+                                                  &presentModeCount,
+                                                  nullptr);
+
+        std::vector<VkPresentModeKHR> presentModes(presentModeCount);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(vulkanProgramInfo.GPU,
+                                                  vulkanProgramInfo.windowSurface,
+                                                  &presentModeCount,
+                                                  presentModes.data());
+
+        for (std::size_t i = 0; i < presentModeCount; i++)
+        {
+            if (presentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR)
+            {
+                 return presentModes[i];
+            }
+        }
+
+        return VK_PRESENT_MODE_FIFO_KHR;
+    }
+
+    VkExtent2D chooseSwapchainExtent()
+    {
+
     }
 
     static void checkVkResult(const VkResult &result, const char *failMessage)
