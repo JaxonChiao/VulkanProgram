@@ -21,8 +21,8 @@ if (${CMAKE_SYSTEM_NAME} STREQUAL Darwin)
 	include_directories(${CMAKE_CURRENT_SOURCE_DIR}/VulkanSDK/macOS/include)
 
 	target_link_libraries(VulkanProgram 
-		${CMAKE_CURRENT_SOURCE_DIR}/VulkanSDK/macOS/lib/libvulkan.1.2.189.dylib
-		${CMAKE_CURRENT_SOURCE_DIR}/VulkanSDK/macOS/lib/libvulkan.1.dylib)
+        ${CMAKE_CURRENT_SOURCE_DIR}/VulkanSDK/macOS/lib/libvulkan.1.2.189.dylib
+        ${CMAKE_CURRENT_SOURCE_DIR}/VulkanSDK/macOS/lib/libvulkan.1.dylib)
 
 elseif(${CMAKE_SYSTEM_NAME} STREQUAL Linux)
 

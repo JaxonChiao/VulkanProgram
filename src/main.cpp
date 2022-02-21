@@ -37,6 +37,9 @@ public:
         addAdditionalDeviceExtensions();
         createDeviceAndQueues();
 
+        // create swapchain
+        createSwapchain();
+
         // Program Loop
         programLoop();
 
@@ -73,24 +76,23 @@ private:
 
         std::vector<const char *> layerEnabled =
                 {
-                        "VK_LAYER_KHRONOS_validation",
+                    "VK_LAYER_KHRONOS_validation",
                 };
 
         std::vector<const char *> instanceExtensionsEnabled =
                 {
-                        VK_EXT_DEBUG_UTILS_EXTENSION_NAME
+                    VK_EXT_DEBUG_UTILS_EXTENSION_NAME
                 };
 
         std::vector<const char *> deviceExtensionsEnabled =
                 {
-
+                    VK_KHR_SWAPCHAIN_EXTENSION_NAME
                 };
 
     } vulkanProgramInfo;
 
     void initVulkan()
     {
-
         VkInstanceCreateInfo instanceCreateInfo{};
         instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         instanceCreateInfo.enabledExtensionCount = vulkanProgramInfo.instanceExtensionsEnabled.size();
@@ -251,6 +253,15 @@ private:
                                            &vulkanProgramInfo.windowSurface);
     }
 
+    void createSwapchain()
+    {
+        // Choose surface format
+        VkSurfaceFormatKHR chosenSurfaceFormat;
+        chooseSurfaceFormat(chosenSurfaceFormat);
+
+        // Choose presentation mode
+    }
+
     void programLoop()
     {
         while (!glfwWindowShouldClose(vulkanProgramInfo.window))
@@ -346,6 +357,38 @@ private:
                 break;
             }
         }
+    }
+
+    /*
+     * Choose a surface format for swapchain
+     */
+    void chooseSurfaceFormat(VkSurfaceFormatKHR &chosenSurfaceFormat)
+    {
+        uint32_t surfaceFormatCount = 0;
+        vkGetPhysicalDeviceSurfaceFormatsKHR(vulkanProgramInfo.GPU,
+                                             vulkanProgramInfo.windowSurface,
+                                             &surfaceFormatCount,
+                                             nullptr);
+
+        std::vector<VkSurfaceFormatKHR> surfaceFormats(surfaceFormatCount);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(vulkanProgramInfo.GPU,
+                                             vulkanProgramInfo.windowSurface,
+                                             &surfaceFormatCount,
+                                             surfaceFormats.data());
+
+        for (std::size_t i = 0; i < surfaceFormatCount; i++)
+        {
+            // Pick VK_FORMAT_B8G8R8A8_SRGB if it is available
+            if (surfaceFormats[i].format == VK_FORMAT_B8G8R8A8_SRGB &&
+                surfaceFormats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+            {
+               chosenSurfaceFormat = surfaceFormats[i];
+               return;
+            }
+        }
+        
+        // If VK_FORMAT_B8G8R8A8_SRGB is not avaliable just pick the first one
+        chosenSurfaceFormat = surfaceFormats[0];
     }
 
     static void checkVkResult(const VkResult &result, const char *failMessage)
