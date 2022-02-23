@@ -76,17 +76,17 @@ private:
 
         std::vector<const char *> layerEnabled =
                 {
-                    "VK_LAYER_KHRONOS_validation",
+                        "VK_LAYER_KHRONOS_validation",
                 };
 
         std::vector<const char *> instanceExtensionsEnabled =
                 {
-                    VK_EXT_DEBUG_UTILS_EXTENSION_NAME
+                        VK_EXT_DEBUG_UTILS_EXTENSION_NAME
                 };
 
         std::vector<const char *> deviceExtensionsEnabled =
                 {
-                    VK_KHR_SWAPCHAIN_EXTENSION_NAME
+                        VK_KHR_SWAPCHAIN_EXTENSION_NAME
                 };
 
     } vulkanProgramInfo;
@@ -193,7 +193,7 @@ private:
         // Because I know the graphics and present queues are going to be
         // the same, so just copy the graphics queue values to present queue
         vulkanProgramInfo.presentQueueFamilyIndex = vulkanProgramInfo.graphicsQueueFamilyIndex;
-        vulkanProgramInfo.presentQueueFound =  true;
+        vulkanProgramInfo.presentQueueFound = true;
 
         // Logical Device Creation
         // Fill queue creation info first
@@ -266,6 +266,10 @@ private:
         // Choose swapchain extent
         VkExtent2D swapchainExtent;
         swapchainExtent = chooseSwapchainExtent();
+
+        // Choose double buffer or triple buffer or whatever the minimum is
+        uint32_t minSwapchainImage;
+        minSwapchainImage = chooseSwapchainMinimumImage();
 
     }
 
@@ -389,7 +393,7 @@ private:
             if (surfaceFormats[i].format == VK_FORMAT_B8G8R8A8_SRGB &&
                 surfaceFormats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
             {
-               return surfaceFormats[i];
+                return surfaceFormats[i];
             }
         }
 
@@ -415,7 +419,7 @@ private:
         {
             if (presentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR)
             {
-                 return presentModes[i];
+                return presentModes[i];
             }
         }
 
@@ -434,7 +438,7 @@ private:
         {
             return surfaceCapabilities.currentExtent;
         }
-        // If there is no limitation, choose a size matches the window size
+            // If there is no limitation, choose a size matches the window size
         else
         {
             int windowWidthPixel, windowHeightPixel;
@@ -444,15 +448,40 @@ private:
                                    &windowHeightPixel);
 
             VkExtent2D finalExtent;
-            finalExtent.height = std::clamp((uint32_t)windowHeightPixel,
+            finalExtent.height = std::clamp((uint32_t) windowHeightPixel,
                                             surfaceCapabilities.minImageExtent.height,
                                             surfaceCapabilities.maxImageExtent.height);
 
-            finalExtent.width = std::clamp((uint32_t)windowWidthPixel,
+            finalExtent.width = std::clamp((uint32_t) windowWidthPixel,
                                            surfaceCapabilities.minImageExtent.width,
                                            surfaceCapabilities.maxImageExtent.width);
 
             return finalExtent;
+        }
+    }
+
+    uint32_t chooseSwapchainMinimumImage()
+    {
+        VkSurfaceCapabilitiesKHR surfaceCapabilities;
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vulkanProgramInfo.GPU,
+                                                  vulkanProgramInfo.windowSurface,
+                                                  &surfaceCapabilities);
+
+        // If maxImageCount is 0, there is no limit in number of images in swapchain
+        if (surfaceCapabilities.maxImageCount == 0)
+        {
+            if (surfaceCapabilities.minImageCount <= 2)
+            {
+                return 2;
+            } else
+            {
+                return surfaceCapabilities.minImageCount;
+            }
+        } else
+        {
+            return std::clamp((uint32_t)2,
+                              surfaceCapabilities.minImageCount,
+                              surfaceCapabilities.maxImageCount);
         }
     }
 
