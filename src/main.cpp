@@ -70,6 +70,8 @@ private:
 
         VkSwapchainKHR swapchain;
 
+        std::vector<VkImage> swapchainImages;
+
         uint32_t graphicsQueueFamilyIndex = 0;
         bool graphicsQueueFound = false;
 
@@ -249,11 +251,6 @@ private:
                          vulkanProgramInfo.presentQueueFamilyIndex,
                          0,
                          &vulkanProgramInfo.presentQueue);
-
-        std::cout << vulkanProgramInfo.presentQueue
-                  << " "
-                  << vulkanProgramInfo.graphicsQueue
-                  << std::endl;
     }
 
     void createWindowAndSurface()
@@ -285,7 +282,7 @@ private:
         chosenSurfaceFormat = chooseSurfaceFormat();
 
         // Choose presentation mode
-        VkPresentModeKHR swapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+        VkPresentModeKHR swapchainPresentMode;
         swapchainPresentMode = choosePresentMode();
 
         // Choose swapchain extent
@@ -326,6 +323,20 @@ private:
                                         &vulkanProgramInfo.swapchain);
 
         checkVkResult(vkResult, "Failed to create swapchain!");
+
+        // Retrieve swapchain images
+        uint32_t swapchainImageCount;
+        vkGetSwapchainImagesKHR(vulkanProgramInfo.renderDevice,
+                                vulkanProgramInfo.swapchain,
+                                &swapchainImageCount,
+                                nullptr);
+
+        vulkanProgramInfo.swapchainImages.resize(swapchainImageCount);
+
+        vkGetSwapchainImagesKHR(vulkanProgramInfo.renderDevice,
+                                vulkanProgramInfo.swapchain,
+                                &swapchainImageCount,
+                                vulkanProgramInfo.swapchainImages.data());
     }
 
     void programLoop()
@@ -338,6 +349,10 @@ private:
 
     void cleanup() const
     {
+        vkDestroySwapchainKHR(vulkanProgramInfo.renderDevice,
+                              vulkanProgramInfo.swapchain,
+                              nullptr);
+
         vkDestroyDevice(vulkanProgramInfo.renderDevice,
                         nullptr);
 
@@ -349,6 +364,7 @@ private:
         destroyDebugMessenger(vulkanProgramInfo.vulkanInstance,
                               debugMessenger,
                               nullptr);
+
         vkDestroySurfaceKHR(vulkanProgramInfo.vulkanInstance,
                             vulkanProgramInfo.windowSurface,
                             nullptr);
