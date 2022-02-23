@@ -7,8 +7,8 @@
 #include <vector>
 #include <cstdlib>
 
-const int windowWidth = 800;
-const int windowHeight = 600;
+const uint32_t windowWidth = 800;
+const uint32_t windowHeight = 600;
 
 class VulkanProgram
 {
@@ -424,7 +424,36 @@ private:
 
     VkExtent2D chooseSwapchainExtent()
     {
+        VkSurfaceCapabilitiesKHR surfaceCapabilities;
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vulkanProgramInfo.GPU,
+                                                  vulkanProgramInfo.windowSurface,
+                                                  &surfaceCapabilities);
 
+        // Test if there is a limitation in image extent
+        if (surfaceCapabilities.currentExtent.height != UINT32_MAX)
+        {
+            return surfaceCapabilities.currentExtent;
+        }
+        // If there is no limitation, choose a size matches the window size
+        else
+        {
+            int windowWidthPixel, windowHeightPixel;
+            // because glfw uses different unit
+            glfwGetFramebufferSize(vulkanProgramInfo.window,
+                                   &windowWidthPixel,
+                                   &windowHeightPixel);
+
+            VkExtent2D finalExtent;
+            finalExtent.height = std::clamp((uint32_t)windowHeightPixel,
+                                            surfaceCapabilities.minImageExtent.height,
+                                            surfaceCapabilities.maxImageExtent.height);
+
+            finalExtent.width = std::clamp((uint32_t)windowWidthPixel,
+                                           surfaceCapabilities.minImageExtent.width,
+                                           surfaceCapabilities.maxImageExtent.width);
+
+            return finalExtent;
+        }
     }
 
     static void checkVkResult(const VkResult &result, const char *failMessage)
