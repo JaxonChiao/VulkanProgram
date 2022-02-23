@@ -39,6 +39,7 @@ public:
 
         // create swapchain
         createSwapchain();
+        createSwapchainImageView();
 
         // Program Loop
         programLoop();
@@ -70,7 +71,11 @@ private:
 
         VkSwapchainKHR swapchain;
 
+        VkFormat swapchainImageFormat;
+        VkColorSpaceKHR swapchainImageColorSpace;
+
         std::vector<VkImage> swapchainImages;
+        std::vector<VkImageView> swapchainImageViews;
 
         uint32_t graphicsQueueFamilyIndex = 0;
         bool graphicsQueueFound = false;
@@ -337,6 +342,40 @@ private:
                                 vulkanProgramInfo.swapchain,
                                 &swapchainImageCount,
                                 vulkanProgramInfo.swapchainImages.data());
+
+        // Save this information for later use
+        vulkanProgramInfo.swapchainImageFormat = swapchainCreateInfo.imageFormat;
+        vulkanProgramInfo.swapchainImageColorSpace = swapchainCreateInfo.imageColorSpace;
+    }
+
+    void createSwapchainImageView()
+    {
+        vulkanProgramInfo.swapchainImageViews.resize(vulkanProgramInfo.swapchainImages.size());
+        // First fill the image view create info except the image memeber
+        VkImageViewCreateInfo imageViewCreateInfo;
+        imageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        imageViewCreateInfo.format = vulkanProgramInfo.swapchainImageFormat;
+        imageViewCreateInfo.pNext = nullptr;
+        imageViewCreateInfo.flags = 0;
+        imageViewCreateInfo.subresourceRange.layerCount = 1;
+        imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
+        imageViewCreateInfo.subresourceRange.levelCount = 1;
+        imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
+        imageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+
+        for (std::size_t i = 0; i < vulkanProgramInfo.swapchainImages.size(); i++)
+        {
+            imageViewCreateInfo.image = vulkanProgramInfo.swapchainImages[i];
+            vkCreateImageView(vulkanProgramInfo.renderDevice,
+                              &imageViewCreateInfo,
+                              nullptr,
+                              &vulkanProgramInfo.swapchainImageViews[i]);
+        }
     }
 
     void programLoop()
@@ -349,6 +388,12 @@ private:
 
     void cleanup() const
     {
+        for (const auto& imageView : vulkanProgramInfo.swapchainImageViews)
+        {
+            vkDestroyImageView(vulkanProgramInfo.renderDevice,
+                                imageView,
+                               nullptr);
+        }
         vkDestroySwapchainKHR(vulkanProgramInfo.renderDevice,
                               vulkanProgramInfo.swapchain,
                               nullptr);
