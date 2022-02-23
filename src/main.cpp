@@ -179,21 +179,34 @@ private:
             exit(-1);
         }
 
+        // Next find a present queue
         VkBool32 presentSupport;
-        vkResult = vkGetPhysicalDeviceSurfaceSupportKHR(vulkanProgramInfo.GPU,
-                                                        vulkanProgramInfo.presentQueueFamilyIndex,
-                                                        vulkanProgramInfo.windowSurface,
-                                                        &presentSupport);
+        for (std::size_t i = 0; i < queueFamilyPptCount; i++)
+        {
+            vkGetPhysicalDeviceSurfaceSupportKHR(vulkanProgramInfo.GPU,
+                                                 i,
+                                                 vulkanProgramInfo.windowSurface,
+                                                 &presentSupport);
+            if (presentSupport)
+            {
+                vulkanProgramInfo.presentQueueFamilyIndex = i;
+                vulkanProgramInfo.presentQueueFound = true;
+                break;
+            }
+        }
 
         if (presentSupport != VK_TRUE)
         {
-            std::cout << "Chosen queue does not support present" << std::endl;
+            std::cout << "Cannot find a queue that supports presentation!" << std::endl;
             exit(-1);
         }
-        // Because I know the graphics and present queues are going to be
-        // the same, so just copy the graphics queue values to present queue
-        vulkanProgramInfo.presentQueueFamilyIndex = vulkanProgramInfo.graphicsQueueFamilyIndex;
-        vulkanProgramInfo.presentQueueFound = true;
+
+        if (vulkanProgramInfo.graphicsQueueFamilyIndex != vulkanProgramInfo.presentQueueFamilyIndex)
+        {
+            std::cout << "Graphics queue index and present queue index are not the same!";
+            exit(-1);
+        }
+
 
         // Logical Device Creation
         // Fill queue creation info first
@@ -234,6 +247,11 @@ private:
                          vulkanProgramInfo.presentQueueFamilyIndex,
                          0,
                          &vulkanProgramInfo.presentQueue);
+
+        std::cout << vulkanProgramInfo.presentQueue
+                  << " "
+                  << vulkanProgramInfo.graphicsQueue
+                  << std::endl;
     }
 
     void createWindowAndSurface()
@@ -271,6 +289,9 @@ private:
         uint32_t minSwapchainImage;
         minSwapchainImage = chooseSwapchainMinimumImage();
 
+        // Choose image sharing mode
+        VkSharingMode swapchainImageSharingMode;
+        swapchainImageSharingMode = chooseImageSharingMode();
     }
 
     void programLoop()
@@ -371,7 +392,9 @@ private:
     }
 
     /*
-     * Choose a surface format for swapchain
+     * ============================================================
+     * Swapchain Helper Functions
+     * ============================================================
      */
     VkSurfaceFormatKHR chooseSurfaceFormat()
     {
@@ -483,6 +506,12 @@ private:
                               surfaceCapabilities.minImageCount,
                               surfaceCapabilities.maxImageCount);
         }
+    }
+
+    VkSharingMode chooseImageSharingMode()
+    {
+        // Because currently we only deal with present queue and graphics queue that are the same
+        return VK_SHARING_MODE_EXCLUSIVE;
     }
 
     static void checkVkResult(const VkResult &result, const char *failMessage)
