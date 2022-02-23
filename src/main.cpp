@@ -68,6 +68,8 @@ private:
 
         VkSurfaceKHR windowSurface = VK_NULL_HANDLE;
 
+        VkSwapchainKHR swapchain;
+
         uint32_t graphicsQueueFamilyIndex = 0;
         bool graphicsQueueFound = false;
 
@@ -273,6 +275,11 @@ private:
 
     void createSwapchain()
     {
+        VkSurfaceCapabilitiesKHR swapchainCapabilities;
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vulkanProgramInfo.GPU,
+                                                  vulkanProgramInfo.windowSurface,
+                                                  &swapchainCapabilities);
+
         // Choose surface format
         VkSurfaceFormatKHR chosenSurfaceFormat;
         chosenSurfaceFormat = chooseSurfaceFormat();
@@ -292,6 +299,33 @@ private:
         // Choose image sharing mode
         VkSharingMode swapchainImageSharingMode;
         swapchainImageSharingMode = chooseImageSharingMode();
+
+        // Fill the swapchain create info
+        VkSwapchainCreateInfoKHR swapchainCreateInfo;
+        swapchainCreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+        swapchainCreateInfo.pNext = nullptr;
+        swapchainCreateInfo.minImageCount = minSwapchainImage;
+        swapchainCreateInfo.imageSharingMode = swapchainImageSharingMode;
+        swapchainCreateInfo.imageFormat = chosenSurfaceFormat.format;
+        swapchainCreateInfo.imageColorSpace = chosenSurfaceFormat.colorSpace;
+        swapchainCreateInfo.oldSwapchain = nullptr;
+        swapchainCreateInfo.clipped = VK_TRUE;
+        swapchainCreateInfo.presentMode = swapchainPresentMode;
+        swapchainCreateInfo.preTransform = swapchainCapabilities.currentTransform;
+        swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        swapchainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        swapchainCreateInfo.imageArrayLayers = 1;
+        swapchainCreateInfo.imageExtent = swapchainExtent;
+        swapchainCreateInfo.surface = vulkanProgramInfo.windowSurface;
+        swapchainCreateInfo.pQueueFamilyIndices = &vulkanProgramInfo.presentQueueFamilyIndex;
+        swapchainCreateInfo.queueFamilyIndexCount = 1;
+
+        vkResult = vkCreateSwapchainKHR(vulkanProgramInfo.renderDevice,
+                                        &swapchainCreateInfo,
+                                        nullptr,
+                                        &vulkanProgramInfo.swapchain);
+
+        checkVkResult(vkResult, "Failed to create swapchain!");
     }
 
     void programLoop()
@@ -502,7 +536,7 @@ private:
             }
         } else
         {
-            return std::clamp((uint32_t)2,
+            return std::clamp((uint32_t) 2,
                               surfaceCapabilities.minImageCount,
                               surfaceCapabilities.maxImageCount);
         }
