@@ -536,7 +536,7 @@ private:
 
     /*
      * ============================================================
-     * Swapchain Helper Functions
+     * START: Swapchain Helper Functions
      * ============================================================
      */
     VkSurfaceFormatKHR chooseSurfaceFormat()
@@ -656,6 +656,12 @@ private:
         // Because currently we only deal with present queue and graphics queue that are the same
         return VK_SHARING_MODE_EXCLUSIVE;
     }
+
+    /*
+     * ============================================================
+     * END: Swapchain Helper Functions
+     * ============================================================
+     */
 
     static std::vector<char> readFile(const std::string& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
