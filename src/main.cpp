@@ -44,6 +44,7 @@ public:
 
         // Graphics pipeline
         createGraphicsPipeline();
+        createRenderPass();
 
         // Program Loop
         programLoop();
@@ -88,7 +89,10 @@ private:
         uint32_t presentQueueFamilyIndex = 0;
         bool presentQueueFound = false;
 
+        // Graphics Pipelines
         VkPipelineLayout pipelineLayout;
+
+        VkRenderPass renderPass;
 
         std::vector<const char *> layerEnabled =
                 {
@@ -430,13 +434,13 @@ private:
 
         // Viewport
         VkViewport viewport{};
-        viewport.width = (float)vulkanProgramInfo.swapchainExtent.width;
-        viewport.height = (float)vulkanProgramInfo.swapchainExtent.height;
+        viewport.width = (float) vulkanProgramInfo.swapchainExtent.width;
+        viewport.height = (float) vulkanProgramInfo.swapchainExtent.height;
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        
+
         VkRect2D scissor{};
         scissor.extent = vulkanProgramInfo.swapchainExtent;
         scissor.offset.x = 0.0f;
@@ -472,7 +476,7 @@ private:
         colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_A_BIT |
                                                    VK_COLOR_COMPONENT_R_BIT |
                                                    VK_COLOR_COMPONENT_G_BIT |
-                                                   VK_COLOR_COMPONENT_G_BIT;
+                                                   VK_COLOR_COMPONENT_B_BIT;
 
         // Dynamic State: nullptr
 
@@ -485,10 +489,12 @@ private:
         pipelineLayoutCreateInfo.setLayoutCount = 0;
 
         // END of setting fixed function state
-        vkCreatePipelineLayout(vulkanProgramInfo.renderDevice,
-                               &pipelineLayoutCreateInfo,
-                               nullptr,
-                               &vulkanProgramInfo.pipelineLayout);
+        vkResult = vkCreatePipelineLayout(vulkanProgramInfo.renderDevice,
+                                          &pipelineLayoutCreateInfo,
+                                          nullptr,
+                                          &vulkanProgramInfo.pipelineLayout);
+
+        checkVkResult(vkResult, "Failed to Pipeline Layout");
 
         vkDestroyShaderModule(vulkanProgramInfo.renderDevice,
                               fragShaderModule, nullptr);
@@ -496,22 +502,41 @@ private:
                               vertShaderModule, nullptr);
     }
 
-    VkShaderModule createShaderModule(const std::vector<char> &code)
+    void createRenderPass()
     {
-        VkShaderModuleCreateInfo createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        createInfo.codeSize = code.size();
-        createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
+        // Attachment description for render pass
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format = vulkanProgramInfo.swapchainImageFormat;
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 
-        VkShaderModule shaderModule;
-        if (vkCreateShaderModule(vulkanProgramInfo.renderDevice,
-                                 &createInfo, nullptr,
-                                 &shaderModule) != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to create shader module!");
-        }
+        // Attachment reference for subpass
+        VkAttachmentReference colorAttachmentReference{};
+        colorAttachmentReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        colorAttachmentReference.attachment = 0;
 
-        return shaderModule;
+        // Subpass description
+        VkSubpassDescription subpassDescription{};
+        subpassDescription.colorAttachmentCount = 1;
+        subpassDescription.pColorAttachments = &colorAttachmentReference;
+        subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+
+        // Render Pass create info
+        VkRenderPassCreateInfo renderPassCreateInfo{};
+        renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassCreateInfo.attachmentCount = 1;
+        renderPassCreateInfo.pAttachments = &colorAttachment;
+        renderPassCreateInfo.pSubpasses = &subpassDescription;
+        renderPassCreateInfo.subpassCount = 1;
+
+        vkResult = vkCreateRenderPass(vulkanProgramInfo.renderDevice,
+                                      &renderPassCreateInfo,
+                                      nullptr,
+                                      &vulkanProgramInfo.renderPass);
+        checkVkResult(vkResult, "Failed to create Render Pass");
     }
 
     void programLoop()
@@ -524,9 +549,13 @@ private:
 
     void cleanup() const
     {
+
         vkDestroyPipelineLayout(vulkanProgramInfo.renderDevice,
                                 vulkanProgramInfo.pipelineLayout,
                                 nullptr);
+        vkDestroyRenderPass(vulkanProgramInfo.renderDevice,
+                            vulkanProgramInfo.renderPass,
+                            nullptr);
         for (const auto &imageView: vulkanProgramInfo.swapchainImageViews)
         {
             vkDestroyImageView(vulkanProgramInfo.renderDevice,
@@ -753,6 +782,24 @@ private:
      * END: Swapchain Helper Functions
      * ============================================================
      */
+
+    VkShaderModule createShaderModule(const std::vector<char> &code)
+    {
+        VkShaderModuleCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        createInfo.codeSize = code.size();
+        createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
+
+        VkShaderModule shaderModule;
+        if (vkCreateShaderModule(vulkanProgramInfo.renderDevice,
+                                 &createInfo, nullptr,
+                                 &shaderModule) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create shader module!");
+        }
+
+        return shaderModule;
+    }
 
     static std::vector<char> readFile(const std::string &filename)
     {
