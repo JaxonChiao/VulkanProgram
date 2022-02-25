@@ -77,6 +77,7 @@ private:
 
         VkFormat swapchainImageFormat;
         VkColorSpaceKHR swapchainImageColorSpace;
+        VkExtent2D swapchainExtent;
 
         std::vector<VkImage> swapchainImages;
         std::vector<VkImageView> swapchainImageViews;
@@ -86,6 +87,8 @@ private:
 
         uint32_t presentQueueFamilyIndex = 0;
         bool presentQueueFound = false;
+
+        VkPipelineLayout pipelineLayout;
 
         std::vector<const char *> layerEnabled =
                 {
@@ -350,6 +353,7 @@ private:
         // Save this information for later use
         vulkanProgramInfo.swapchainImageFormat = swapchainCreateInfo.imageFormat;
         vulkanProgramInfo.swapchainImageColorSpace = swapchainCreateInfo.imageColorSpace;
+        vulkanProgramInfo.swapchainExtent = swapchainCreateInfo.imageExtent;
     }
 
     void createSwapchainImageView()
@@ -382,7 +386,8 @@ private:
         }
     }
 
-    void createGraphicsPipeline() {
+    void createGraphicsPipeline()
+    {
         auto vertShaderCode = readFile("../src/spvShaders/vert.spv");
         auto fragShaderCode = readFile("../src/spvShaders/frag.spv");
 
@@ -404,22 +409,105 @@ private:
         VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo,
                                                           fragShaderStageInfo};
 
+        // ===========================================================================
+        // Fixed functions
+        // ===========================================================================
+
+        // Vertex Input
+        VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo{};
+        vertexInputStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vertexInputStateCreateInfo.pNext = nullptr;
+        vertexInputStateCreateInfo.pVertexAttributeDescriptions = nullptr;
+        vertexInputStateCreateInfo.pVertexBindingDescriptions = nullptr;
+        vertexInputStateCreateInfo.vertexAttributeDescriptionCount = 0;
+        vertexInputStateCreateInfo.vertexBindingDescriptionCount = 0;
+
+        // Input Assembly
+        VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo{};
+        inputAssemblyStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        inputAssemblyStateCreateInfo.primitiveRestartEnable = VK_FALSE;
+        inputAssemblyStateCreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+        // Viewport
+        VkViewport viewport{};
+        viewport.width = (float)vulkanProgramInfo.swapchainExtent.width;
+        viewport.height = (float)vulkanProgramInfo.swapchainExtent.height;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        
+        VkRect2D scissor{};
+        scissor.extent = vulkanProgramInfo.swapchainExtent;
+        scissor.offset.x = 0.0f;
+        scissor.offset.y = 0.0f;
+
+        // Rasterizer
+        VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo{};
+        rasterizationStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizationStateCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizationStateCreateInfo.depthBiasEnable = VK_FALSE;
+        rasterizationStateCreateInfo.depthClampEnable = VK_FALSE;
+        rasterizationStateCreateInfo.lineWidth = 1.0f;
+        rasterizationStateCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterizationStateCreateInfo.rasterizerDiscardEnable = VK_FALSE;
+
+        // Multisampling
+        VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo{};
+        multisampleStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisampleStateCreateInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        multisampleStateCreateInfo.sampleShadingEnable = VK_FALSE;
+
+        // Depth and Stencil: Skip for now
+
+        // Color blending
+        VkPipelineColorBlendStateCreateInfo colorBlendStateCreateInfo{};
+        colorBlendStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBlendStateCreateInfo.attachmentCount = 1;
+        colorBlendStateCreateInfo.logicOpEnable = VK_FALSE;
+
+        VkPipelineColorBlendAttachmentState colorBlendAttachmentState{};
+        colorBlendAttachmentState.blendEnable = VK_FALSE;
+        colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_A_BIT |
+                                                   VK_COLOR_COMPONENT_R_BIT |
+                                                   VK_COLOR_COMPONENT_G_BIT |
+                                                   VK_COLOR_COMPONENT_G_BIT;
+
+        // Dynamic State: nullptr
+
+        // Pipeline Layout
+        VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
+        pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
+        pipelineLayoutCreateInfo.pSetLayouts = nullptr;
+        pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
+        pipelineLayoutCreateInfo.setLayoutCount = 0;
+
+        // END of setting fixed function state
+        vkCreatePipelineLayout(vulkanProgramInfo.renderDevice,
+                               &pipelineLayoutCreateInfo,
+                               nullptr,
+                               &vulkanProgramInfo.pipelineLayout);
+
         vkDestroyShaderModule(vulkanProgramInfo.renderDevice,
                               fragShaderModule, nullptr);
         vkDestroyShaderModule(vulkanProgramInfo.renderDevice,
                               vertShaderModule, nullptr);
     }
 
-    VkShaderModule createShaderModule(const std::vector<char>& code) {
+    VkShaderModule createShaderModule(const std::vector<char> &code)
+    {
         VkShaderModuleCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         createInfo.codeSize = code.size();
-        createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+        createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
 
         VkShaderModule shaderModule;
         if (vkCreateShaderModule(vulkanProgramInfo.renderDevice,
                                  &createInfo, nullptr,
-                                 &shaderModule) != VK_SUCCESS) {
+                                 &shaderModule) != VK_SUCCESS)
+        {
             throw std::runtime_error("failed to create shader module!");
         }
 
@@ -436,10 +524,13 @@ private:
 
     void cleanup() const
     {
-        for (const auto& imageView : vulkanProgramInfo.swapchainImageViews)
+        vkDestroyPipelineLayout(vulkanProgramInfo.renderDevice,
+                                vulkanProgramInfo.pipelineLayout,
+                                nullptr);
+        for (const auto &imageView: vulkanProgramInfo.swapchainImageViews)
         {
             vkDestroyImageView(vulkanProgramInfo.renderDevice,
-                                imageView,
+                               imageView,
                                nullptr);
         }
         vkDestroySwapchainKHR(vulkanProgramInfo.renderDevice,
@@ -663,10 +754,12 @@ private:
      * ============================================================
      */
 
-    static std::vector<char> readFile(const std::string& filename) {
+    static std::vector<char> readFile(const std::string &filename)
+    {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
-        if (!file.is_open()) {
+        if (!file.is_open())
+        {
             throw std::runtime_error("failed to open file!");
         }
 
