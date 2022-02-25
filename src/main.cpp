@@ -43,8 +43,8 @@ public:
         createSwapchainImageView();
 
         // Graphics pipeline
-        createGraphicsPipeline();
         createRenderPass();
+        createGraphicsPipeline();
 
         // Program Loop
         programLoop();
