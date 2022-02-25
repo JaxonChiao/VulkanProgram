@@ -94,6 +94,8 @@ private:
 
         VkRenderPass renderPass;
 
+        VkPipeline graphicsPipeline;
+
         std::vector<const char *> layerEnabled =
                 {
                         "VK_LAYER_KHRONOS_validation",
@@ -446,6 +448,13 @@ private:
         scissor.offset.x = 0.0f;
         scissor.offset.y = 0.0f;
 
+        VkPipelineViewportStateCreateInfo viewportStateCreateInfo{};
+        viewportStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportStateCreateInfo.pScissors = &scissor;
+        viewportStateCreateInfo.scissorCount = 1;
+        viewportStateCreateInfo.pViewports = &viewport;
+        viewportStateCreateInfo.viewportCount = 1;
+
         // Rasterizer
         VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo{};
         rasterizationStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -478,6 +487,8 @@ private:
                                                    VK_COLOR_COMPONENT_G_BIT |
                                                    VK_COLOR_COMPONENT_B_BIT;
 
+        colorBlendStateCreateInfo.pAttachments = &colorBlendAttachmentState;
+
         // Dynamic State: nullptr
 
         // Pipeline Layout
@@ -495,6 +506,30 @@ private:
                                           &vulkanProgramInfo.pipelineLayout);
 
         checkVkResult(vkResult, "Failed to Pipeline Layout");
+
+        // Start creating graphics pipeline
+        VkGraphicsPipelineCreateInfo graphicsPipelineCreateInfo{};
+        graphicsPipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        graphicsPipelineCreateInfo.renderPass = vulkanProgramInfo.renderPass;
+        graphicsPipelineCreateInfo.layout = vulkanProgramInfo.pipelineLayout;
+        graphicsPipelineCreateInfo.pVertexInputState = &vertexInputStateCreateInfo;
+        graphicsPipelineCreateInfo.pInputAssemblyState = &inputAssemblyStateCreateInfo;
+        graphicsPipelineCreateInfo.pRasterizationState = &rasterizationStateCreateInfo;
+        graphicsPipelineCreateInfo.pMultisampleState = &multisampleStateCreateInfo;
+        graphicsPipelineCreateInfo.pColorBlendState = &colorBlendStateCreateInfo;
+        graphicsPipelineCreateInfo.pDynamicState = nullptr;
+        graphicsPipelineCreateInfo.pStages = shaderStages;
+        graphicsPipelineCreateInfo.stageCount = 2;
+        graphicsPipelineCreateInfo.pDepthStencilState = nullptr;
+        graphicsPipelineCreateInfo.pViewportState = &viewportStateCreateInfo;
+        graphicsPipelineCreateInfo.subpass = 0;
+
+        vkCreateGraphicsPipelines(vulkanProgramInfo.renderDevice,
+                                  VK_NULL_HANDLE,
+                                  1,
+                                  &graphicsPipelineCreateInfo,
+                                  nullptr,
+                                  &vulkanProgramInfo.graphicsPipeline);
 
         vkDestroyShaderModule(vulkanProgramInfo.renderDevice,
                               fragShaderModule, nullptr);
@@ -549,6 +584,10 @@ private:
 
     void cleanup() const
     {
+
+        vkDestroyPipeline(vulkanProgramInfo.renderDevice,
+                          vulkanProgramInfo.graphicsPipeline,
+                          nullptr);
 
         vkDestroyPipelineLayout(vulkanProgramInfo.renderDevice,
                                 vulkanProgramInfo.pipelineLayout,
