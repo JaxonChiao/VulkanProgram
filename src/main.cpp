@@ -45,6 +45,7 @@ public:
         // Graphics pipeline
         createRenderPass();
         createGraphicsPipeline();
+        createSwapchainFramebuffer();
 
         // Program Loop
         programLoop();
@@ -95,6 +96,8 @@ private:
         VkRenderPass renderPass;
 
         VkPipeline graphicsPipeline;
+
+        std::vector<VkFramebuffer> swapchainFramebuffers;
 
         std::vector<const char *> layerEnabled =
                 {
@@ -574,6 +577,31 @@ private:
         checkVkResult(vkResult, "Failed to create Render Pass");
     }
 
+    void createSwapchainFramebuffer()
+    {
+        vulkanProgramInfo.swapchainFramebuffers.resize(vulkanProgramInfo.swapchainImages.size());
+
+        // Create a Framebuffer for each image in swapchain
+        for (std::size_t i = 0; i < vulkanProgramInfo.swapchainImages.size(); i++)
+        {
+            VkFramebufferCreateInfo framebufferCreateInfo{};
+            framebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            framebufferCreateInfo.renderPass = vulkanProgramInfo.renderPass;
+            framebufferCreateInfo.pAttachments = &vulkanProgramInfo.swapchainImageViews[i];
+            framebufferCreateInfo.attachmentCount = 1;
+            framebufferCreateInfo.height = vulkanProgramInfo.swapchainExtent.height;
+            framebufferCreateInfo.width  = vulkanProgramInfo.swapchainExtent.width;
+            framebufferCreateInfo.layers = 1;
+
+            vkResult = vkCreateFramebuffer(vulkanProgramInfo.renderDevice,
+                                &framebufferCreateInfo,
+                                nullptr,
+                                &vulkanProgramInfo.swapchainFramebuffers[i]);
+
+            checkVkResult(vkResult, "Failed to create Framebuffer");
+        }
+    }
+
     void programLoop()
     {
         while (!glfwWindowShouldClose(vulkanProgramInfo.window))
@@ -584,6 +612,12 @@ private:
 
     void cleanup() const
     {
+        for (const VkFramebuffer &swapchainFramebuffer : vulkanProgramInfo.swapchainFramebuffers)
+        {
+            vkDestroyFramebuffer(vulkanProgramInfo.renderDevice,
+                                 swapchainFramebuffer,
+                                 nullptr);
+        }
 
         vkDestroyPipeline(vulkanProgramInfo.renderDevice,
                           vulkanProgramInfo.graphicsPipeline,
