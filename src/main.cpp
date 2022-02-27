@@ -7,6 +7,7 @@
 #include <vector>
 #include <cstdlib>
 #include <fstream>
+#include <cstring>
 
 const uint32_t windowWidth = 800;
 const uint32_t windowHeight = 600;
