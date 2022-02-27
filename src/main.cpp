@@ -641,7 +641,7 @@ private:
 
         vkDestroyDevice(vulkanProgramInfo.renderDevice,
                         nullptr);
-
+        
         // Find function to destroy debug messenger
         auto destroyDebugMessenger = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(
                 vulkanProgramInfo.vulkanInstance,
