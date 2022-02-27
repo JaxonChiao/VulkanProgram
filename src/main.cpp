@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <cstring>
+#include <algorithm>
 
 const uint32_t windowWidth = 800;
 const uint32_t windowHeight = 600;
