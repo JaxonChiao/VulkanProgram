@@ -28,6 +28,12 @@ elseif(${CMAKE_SYSTEM_NAME} STREQUAL Linux)
 
 	message("Building for Ubuntu")
 
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/VulkanSDK/x86_64/include)
+
+    target_link_libraries(VulkanProgram
+        ${CMAKE_CURRENT_SOURCE_DIR}/VulkanSDK/x86_64/lib/libvulkan.so.1
+        ${CMAKE_CURRENT_SOURCE_DIR}/VulkanSDK/x86_64/lib/libvulkan.so.1.2.198)
+
 
 
 endif()
