@@ -49,6 +49,9 @@ public:
         createGraphicsPipeline();
         createSwapchainFramebuffer();
 
+        // Drawing Commands
+        createCommandBuffers();
+
         // Program Loop
         programLoop();
 
@@ -100,6 +103,10 @@ private:
         VkPipeline graphicsPipeline;
 
         std::vector<VkFramebuffer> swapchainFramebuffers;
+
+        // Command Buffers
+        VkCommandPool commandPool;
+        VkCommandBuffer commandBuffer;
 
         std::vector<const char *> layerEnabled =
                 {
@@ -604,6 +611,33 @@ private:
         }
     }
 
+    void createCommandBuffers()
+    {
+        // Create a command pool
+        VkCommandPoolCreateInfo commandPoolCreateInfo{};
+        commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        commandPoolCreateInfo.queueFamilyIndex = vulkanProgramInfo.graphicsQueueFamilyIndex;
+
+        vkCreateCommandPool(vulkanProgramInfo.renderDevice,
+                            &commandPoolCreateInfo,
+                            nullptr,
+                            &vulkanProgramInfo.commandPool);
+
+        // Allocate command buffer
+        VkCommandBufferAllocateInfo commandBufferAllocateInfo{
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            nullptr,
+            vulkanProgramInfo.commandPool,
+            VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            1
+        };
+
+        vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice,
+                                 &commandBufferAllocateInfo,
+                                 &vulkanProgramInfo.commandBuffer);
+    }
+
     void programLoop()
     {
         while (!glfwWindowShouldClose(vulkanProgramInfo.window))
@@ -614,6 +648,10 @@ private:
 
     void cleanup() const
     {
+        vkDestroyCommandPool(vulkanProgramInfo.renderDevice,
+                             vulkanProgramInfo.commandPool,
+                             nullptr);
+
         for (const VkFramebuffer &swapchainFramebuffer : vulkanProgramInfo.swapchainFramebuffers)
         {
             vkDestroyFramebuffer(vulkanProgramInfo.renderDevice,
