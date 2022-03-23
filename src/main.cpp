@@ -1,4 +1,5 @@
 #define GLFW_INCLUDE_VULKAN
+
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 #include <iostream>
@@ -50,6 +51,9 @@ public:
         // Drawing Commands
         createCommandBuffers();
 
+        // Synchronization Objects
+        createSynchronizationObjects();
+
         // Program Loop
         programLoop();
 
@@ -100,11 +104,18 @@ private:
 
         VkPipeline graphicsPipeline;
 
+        uint32_t activeSwapchainImage = 0;
+
         std::vector<VkFramebuffer> swapchainFramebuffers;
 
         // Command Buffers
         VkCommandPool commandPool;
         VkCommandBuffer commandBuffer;
+
+        // Synchronization Objects
+        VkFence frameReadyFence = VK_NULL_HANDLE;
+        VkSemaphore nextImageReadySemaphore = VK_NULL_HANDLE;
+        VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
 
         std::vector<const char *> layerEnabled =
                 {
@@ -597,13 +608,13 @@ private:
             framebufferCreateInfo.pAttachments = &vulkanProgramInfo.swapchainImageViews[i];
             framebufferCreateInfo.attachmentCount = 1;
             framebufferCreateInfo.height = vulkanProgramInfo.swapchainExtent.height;
-            framebufferCreateInfo.width  = vulkanProgramInfo.swapchainExtent.width;
+            framebufferCreateInfo.width = vulkanProgramInfo.swapchainExtent.width;
             framebufferCreateInfo.layers = 1;
 
             vkResult = vkCreateFramebuffer(vulkanProgramInfo.renderDevice,
-                                &framebufferCreateInfo,
-                                nullptr,
-                                &vulkanProgramInfo.swapchainFramebuffers[i]);
+                                           &framebufferCreateInfo,
+                                           nullptr,
+                                           &vulkanProgramInfo.swapchainFramebuffers[i]);
 
             checkVkResult(vkResult, "Failed to create Framebuffer");
         }
@@ -624,11 +635,11 @@ private:
 
         // Allocate command buffer
         VkCommandBufferAllocateInfo commandBufferAllocateInfo{
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            nullptr,
-            vulkanProgramInfo.commandPool,
-            VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-            1
+                VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                nullptr,
+                vulkanProgramInfo.commandPool,
+                VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                1
         };
 
         vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice,
@@ -636,21 +647,153 @@ private:
                                  &vulkanProgramInfo.commandBuffer);
     }
 
+    void recordCommandBuffer()
+    {
+        VkCommandBufferBeginInfo commandBufferBeginInfo{};
+        commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        commandBufferBeginInfo.pInheritanceInfo = nullptr;
+
+        VkClearValue clearValue{{{0.0f, 0.0f, 0.0f, 1.0f}}};
+
+        VkRenderPassBeginInfo renderPassBeginInfo{};
+        renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassBeginInfo.renderPass = vulkanProgramInfo.renderPass;
+        renderPassBeginInfo.pClearValues = &clearValue;
+        renderPassBeginInfo.clearValueCount = 1;
+        renderPassBeginInfo.framebuffer = vulkanProgramInfo.swapchainFramebuffers[vulkanProgramInfo.activeSwapchainImage];
+        renderPassBeginInfo.renderArea.offset = {0, 0};
+        renderPassBeginInfo.renderArea.extent = vulkanProgramInfo.swapchainExtent;
+
+        vkBeginCommandBuffer(vulkanProgramInfo.commandBuffer,
+                             &commandBufferBeginInfo);
+
+        vkCmdBeginRenderPass(vulkanProgramInfo.commandBuffer,
+                             &renderPassBeginInfo,
+                             VK_SUBPASS_CONTENTS_INLINE);
+
+        vkCmdBindPipeline(vulkanProgramInfo.commandBuffer,
+                          VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          vulkanProgramInfo.graphicsPipeline);
+
+        vkCmdDraw(vulkanProgramInfo.commandBuffer,
+                  3,
+                  1,
+                  0,
+                  0);
+
+        vkCmdEndRenderPass(vulkanProgramInfo.commandBuffer);
+
+        vkResult = vkEndCommandBuffer(vulkanProgramInfo.commandBuffer);
+
+        checkVkResult(vkResult, "Failed to end command buffer");
+    }
+
+    void createSynchronizationObjects()
+    {
+        VkFenceCreateInfo frameReadyCreatInfo{};
+        frameReadyCreatInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        frameReadyCreatInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+        frameReadyCreatInfo.pNext = nullptr;
+
+        VkSemaphoreCreateInfo nextImageReadySemaphoreCreateInfo{};
+        nextImageReadySemaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+        VkSemaphoreCreateInfo renderFinishedSemaphoreCreateInfo{};
+        renderFinishedSemaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+        vkResult = vkCreateFence(vulkanProgramInfo.renderDevice,
+                                 &frameReadyCreatInfo,
+                                 nullptr,
+                                 &vulkanProgramInfo.frameReadyFence);
+
+        checkVkResult(vkResult, "Failed to create frame ready fence");
+
+        vkResult = vkCreateSemaphore(vulkanProgramInfo.renderDevice,
+                                     &nextImageReadySemaphoreCreateInfo,
+                                     nullptr,
+                                     &vulkanProgramInfo.nextImageReadySemaphore);
+
+        checkVkResult(vkResult, "Failed to create next image ready semaphore");
+
+        vkResult = vkCreateSemaphore(vulkanProgramInfo.renderDevice,
+                                     &renderFinishedSemaphoreCreateInfo,
+                                     nullptr,
+                                     &vulkanProgramInfo.renderFinishedSemaphore);
+    }
+
+    void drawFrame()
+    {
+        std::cout << "Waiting for fence" << std::endl;
+        vkWaitForFences(vulkanProgramInfo.renderDevice,
+                        1,
+                        &vulkanProgramInfo.frameReadyFence,
+                        VK_TRUE,
+                        UINT64_MAX);
+
+        std::cout << "Reset fence" << std::endl;
+        // Reset fence immediately for next use
+        vkResetFences(vulkanProgramInfo.renderDevice,
+                      1,
+                      &vulkanProgramInfo.frameReadyFence);
+
+
+        vkAcquireNextImageKHR(vulkanProgramInfo.renderDevice,
+                              vulkanProgramInfo.swapchain,
+                              UINT64_MAX,
+                              vulkanProgramInfo.nextImageReadySemaphore,
+                              vulkanProgramInfo.frameReadyFence,
+                              &vulkanProgramInfo.activeSwapchainImage);
+
+        vkResetCommandBuffer(vulkanProgramInfo.commandBuffer,
+                             0);
+
+        recordCommandBuffer();
+
+        const VkPipelineStageFlags waitStageFlags[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+
+        VkSubmitInfo submitCmdBuffer{};
+        submitCmdBuffer.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitCmdBuffer.waitSemaphoreCount = 1;
+        submitCmdBuffer.pWaitSemaphores = &vulkanProgramInfo.nextImageReadySemaphore;
+        submitCmdBuffer.pWaitDstStageMask = waitStageFlags;
+        submitCmdBuffer.commandBufferCount = 1;
+        submitCmdBuffer.pCommandBuffers = &vulkanProgramInfo.commandBuffer;
+        submitCmdBuffer.signalSemaphoreCount = 1;
+        submitCmdBuffer.pSignalSemaphores = &vulkanProgramInfo.renderFinishedSemaphore;
+
+        std::cout << "FENCE: " << vulkanProgramInfo.frameReadyFence << std::endl;
+        vkResult = vkQueueSubmit(vulkanProgramInfo.graphicsQueue,
+                                 1,
+                                 &submitCmdBuffer,
+                                 vulkanProgramInfo.frameReadyFence);
+
+        checkVkResult(vkResult, "Failed to submit command buffer");
+    }
+
     void programLoop()
     {
         while (!glfwWindowShouldClose(vulkanProgramInfo.window))
         {
             glfwPollEvents();
+            drawFrame();
         }
     }
 
     void cleanup() const
     {
+        vkDestroySemaphore(vulkanProgramInfo.renderDevice,
+                           vulkanProgramInfo.nextImageReadySemaphore,
+                           nullptr);
+
+        vkDestroyFence(vulkanProgramInfo.renderDevice,
+                       vulkanProgramInfo.frameReadyFence,
+                       nullptr);
+
         vkDestroyCommandPool(vulkanProgramInfo.renderDevice,
                              vulkanProgramInfo.commandPool,
                              nullptr);
 
-        for (const VkFramebuffer &swapchainFramebuffer : vulkanProgramInfo.swapchainFramebuffers)
+        for (const VkFramebuffer &swapchainFramebuffer: vulkanProgramInfo.swapchainFramebuffers)
         {
             vkDestroyFramebuffer(vulkanProgramInfo.renderDevice,
                                  swapchainFramebuffer,
@@ -679,7 +822,7 @@ private:
 
         vkDestroyDevice(vulkanProgramInfo.renderDevice,
                         nullptr);
-        
+
         // Find function to destroy debug messenger
         auto destroyDebugMessenger = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(
                 vulkanProgramInfo.vulkanInstance,
@@ -935,7 +1078,7 @@ private:
     static void checkVkResult(const VkResult &result, const char *failMessage)
     {
         if (result == VK_SUCCESS) return;
-        std::cout << failMessage << std::endl;
+        std::cerr << failMessage << std::endl;
         exit(-1);
     }
 
