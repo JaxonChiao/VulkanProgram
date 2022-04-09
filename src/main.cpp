@@ -580,6 +580,16 @@ private:
         subpassDescription.pColorAttachments = &colorAttachmentReference;
         subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 
+        // Subpass dependency
+        VkSubpassDependency subpassDependency{};
+        subpassDependency.dependencyFlags = 0;
+        subpassDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        subpassDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        subpassDependency.srcAccessMask = 0;
+        subpassDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        subpassDependency.dstSubpass = 0;
+
         // Render Pass create info
         VkRenderPassCreateInfo renderPassCreateInfo{};
         renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -587,6 +597,8 @@ private:
         renderPassCreateInfo.pAttachments = &colorAttachment;
         renderPassCreateInfo.pSubpasses = &subpassDescription;
         renderPassCreateInfo.subpassCount = 1;
+        renderPassCreateInfo.dependencyCount = 1;
+        renderPassCreateInfo.pDependencies = &subpassDependency;
 
         vkResult = vkCreateRenderPass(vulkanProgramInfo.renderDevice,
                                       &renderPassCreateInfo,
@@ -768,6 +780,20 @@ private:
                                  vulkanProgramInfo.frameReadyFence);
 
         checkVkResult(vkResult, "Failed to submit command buffer");
+
+        uint32_t renderedImageIndices[] = {vulkanProgramInfo.activeSwapchainImage};
+
+        VkPresentInfoKHR presentInfo{};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = &vulkanProgramInfo.renderFinishedSemaphore;
+        presentInfo.pImageIndices = renderedImageIndices;
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = &vulkanProgramInfo.swapchain;
+        presentInfo.pResults = nullptr;
+
+        vkQueuePresentKHR(vulkanProgramInfo.presentQueue,
+                          &presentInfo);
     }
 
     void programLoop()
@@ -777,10 +803,15 @@ private:
             glfwPollEvents();
             drawFrame();
         }
+        vkDeviceWaitIdle(vulkanProgramInfo.renderDevice);
     }
 
     void cleanup() const
     {
+        vkDestroySemaphore(vulkanProgramInfo.renderDevice,
+                           vulkanProgramInfo.renderFinishedSemaphore,
+                           nullptr);
+
         vkDestroySemaphore(vulkanProgramInfo.renderDevice,
                            vulkanProgramInfo.nextImageReadySemaphore,
                            nullptr);
