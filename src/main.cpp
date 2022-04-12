@@ -735,14 +735,12 @@ private:
 
     void drawFrame()
     {
-        std::cout << "Waiting for fence" << std::endl;
         vkWaitForFences(vulkanProgramInfo.renderDevice,
                         1,
                         &vulkanProgramInfo.frameReadyFence,
                         VK_TRUE,
                         UINT64_MAX);
 
-        std::cout << "Reset fence" << std::endl;
         // Reset fence immediately for next use
         vkResetFences(vulkanProgramInfo.renderDevice,
                       1,
@@ -753,7 +751,7 @@ private:
                               vulkanProgramInfo.swapchain,
                               UINT64_MAX,
                               vulkanProgramInfo.nextImageReadySemaphore,
-                              vulkanProgramInfo.frameReadyFence,
+                              VK_NULL_HANDLE,
                               &vulkanProgramInfo.activeSwapchainImage);
 
         vkResetCommandBuffer(vulkanProgramInfo.commandBuffer,
@@ -773,7 +771,6 @@ private:
         submitCmdBuffer.signalSemaphoreCount = 1;
         submitCmdBuffer.pSignalSemaphores = &vulkanProgramInfo.renderFinishedSemaphore;
 
-        std::cout << "FENCE: " << vulkanProgramInfo.frameReadyFence << std::endl;
         vkResult = vkQueueSubmit(vulkanProgramInfo.graphicsQueue,
                                  1,
                                  &submitCmdBuffer,
