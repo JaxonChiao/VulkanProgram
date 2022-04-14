@@ -2,7 +2,6 @@
 .idea
 build/
 *.swp
-glfw/
 .cache/
 compile_commands.json
 run.sh
