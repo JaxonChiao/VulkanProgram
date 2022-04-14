@@ -11,6 +11,7 @@
 
 const uint32_t windowWidth = 800;
 const uint32_t windowHeight = 600;
+const int MAX_FRAMES_IN_FLIGHT = 2;
 
 class VulkanProgram
 {
@@ -110,12 +111,15 @@ private:
 
         // Command Buffers
         VkCommandPool commandPool;
-        VkCommandBuffer commandBuffer;
+        VkCommandBuffer commandBuffers[MAX_FRAMES_IN_FLIGHT];
 
         // Synchronization Objects
-        VkFence frameReadyFence = VK_NULL_HANDLE;
-        VkSemaphore nextImageReadySemaphore = VK_NULL_HANDLE;
-        VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
+        VkFence frameReadyFences[MAX_FRAMES_IN_FLIGHT];
+        VkSemaphore nextImageReadySemaphores[MAX_FRAMES_IN_FLIGHT];
+        VkSemaphore renderFinishedSemaphores[MAX_FRAMES_IN_FLIGHT];
+
+        // Keep track of current frame. Its value should never exceed MAX_IN_FLIGHT_FRAMES
+        int curr_frame = 0;
 
         std::vector<const char *> layerEnabled =
                 {
@@ -651,12 +655,13 @@ private:
                 nullptr,
                 vulkanProgramInfo.commandPool,
                 VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                1
+                MAX_FRAMES_IN_FLIGHT
         };
 
-        vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice,
-                                 &commandBufferAllocateInfo,
-                                 &vulkanProgramInfo.commandBuffer);
+        vkResult = vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice,
+                                            &commandBufferAllocateInfo,
+                                            vulkanProgramInfo.commandBuffers);
+        checkVkResult(vkResult, "Failed to allocate Command Buffers");
     }
 
     void recordCommandBuffer()
@@ -676,26 +681,26 @@ private:
         renderPassBeginInfo.renderArea.offset = {0, 0};
         renderPassBeginInfo.renderArea.extent = vulkanProgramInfo.swapchainExtent;
 
-        vkBeginCommandBuffer(vulkanProgramInfo.commandBuffer,
+        vkBeginCommandBuffer(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
                              &commandBufferBeginInfo);
 
-        vkCmdBeginRenderPass(vulkanProgramInfo.commandBuffer,
+        vkCmdBeginRenderPass(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
                              &renderPassBeginInfo,
                              VK_SUBPASS_CONTENTS_INLINE);
 
-        vkCmdBindPipeline(vulkanProgramInfo.commandBuffer,
+        vkCmdBindPipeline(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
                           VK_PIPELINE_BIND_POINT_GRAPHICS,
                           vulkanProgramInfo.graphicsPipeline);
 
-        vkCmdDraw(vulkanProgramInfo.commandBuffer,
+        vkCmdDraw(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
                   3,
                   1,
                   0,
                   0);
 
-        vkCmdEndRenderPass(vulkanProgramInfo.commandBuffer);
+        vkCmdEndRenderPass(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame]);
 
-        vkResult = vkEndCommandBuffer(vulkanProgramInfo.commandBuffer);
+        vkResult = vkEndCommandBuffer(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame]);
 
         checkVkResult(vkResult, "Failed to end command buffer");
     }
@@ -713,48 +718,51 @@ private:
         VkSemaphoreCreateInfo renderFinishedSemaphoreCreateInfo{};
         renderFinishedSemaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-        vkResult = vkCreateFence(vulkanProgramInfo.renderDevice,
-                                 &frameReadyCreatInfo,
-                                 nullptr,
-                                 &vulkanProgramInfo.frameReadyFence);
-
-        checkVkResult(vkResult, "Failed to create frame ready fence");
-
-        vkResult = vkCreateSemaphore(vulkanProgramInfo.renderDevice,
-                                     &nextImageReadySemaphoreCreateInfo,
+        for (std::size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        {
+            vkResult = vkCreateFence(vulkanProgramInfo.renderDevice,
+                                     &frameReadyCreatInfo,
                                      nullptr,
-                                     &vulkanProgramInfo.nextImageReadySemaphore);
+                                     &vulkanProgramInfo.frameReadyFences[i]);
 
-        checkVkResult(vkResult, "Failed to create next image ready semaphore");
+            checkVkResult(vkResult, "Failed to create frame ready fence");
 
-        vkResult = vkCreateSemaphore(vulkanProgramInfo.renderDevice,
-                                     &renderFinishedSemaphoreCreateInfo,
-                                     nullptr,
-                                     &vulkanProgramInfo.renderFinishedSemaphore);
+            vkResult = vkCreateSemaphore(vulkanProgramInfo.renderDevice,
+                                         &nextImageReadySemaphoreCreateInfo,
+                                         nullptr,
+                                         &vulkanProgramInfo.nextImageReadySemaphores[i]);
+            checkVkResult(vkResult, "Failed to create next image ready semaphore");
+
+            vkResult = vkCreateSemaphore(vulkanProgramInfo.renderDevice,
+                                         &renderFinishedSemaphoreCreateInfo,
+                                         nullptr,
+                                         &vulkanProgramInfo.renderFinishedSemaphores[i]);
+
+            checkVkResult(vkResult, "Failed to create render finished semaphore");
+        }
     }
 
     void drawFrame()
     {
         vkWaitForFences(vulkanProgramInfo.renderDevice,
                         1,
-                        &vulkanProgramInfo.frameReadyFence,
+                        &vulkanProgramInfo.frameReadyFences[vulkanProgramInfo.curr_frame],
                         VK_TRUE,
                         UINT64_MAX);
-
         // Reset fence immediately for next use
         vkResetFences(vulkanProgramInfo.renderDevice,
                       1,
-                      &vulkanProgramInfo.frameReadyFence);
+                      &vulkanProgramInfo.frameReadyFences[vulkanProgramInfo.curr_frame]);
 
 
         vkAcquireNextImageKHR(vulkanProgramInfo.renderDevice,
                               vulkanProgramInfo.swapchain,
                               UINT64_MAX,
-                              vulkanProgramInfo.nextImageReadySemaphore,
+                              vulkanProgramInfo.nextImageReadySemaphores[vulkanProgramInfo.curr_frame],
                               VK_NULL_HANDLE,
                               &vulkanProgramInfo.activeSwapchainImage);
 
-        vkResetCommandBuffer(vulkanProgramInfo.commandBuffer,
+        vkResetCommandBuffer(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
                              0);
 
         recordCommandBuffer();
@@ -764,17 +772,17 @@ private:
         VkSubmitInfo submitCmdBuffer{};
         submitCmdBuffer.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitCmdBuffer.waitSemaphoreCount = 1;
-        submitCmdBuffer.pWaitSemaphores = &vulkanProgramInfo.nextImageReadySemaphore;
+        submitCmdBuffer.pWaitSemaphores = &vulkanProgramInfo.nextImageReadySemaphores[vulkanProgramInfo.curr_frame];
         submitCmdBuffer.pWaitDstStageMask = waitStageFlags;
         submitCmdBuffer.commandBufferCount = 1;
-        submitCmdBuffer.pCommandBuffers = &vulkanProgramInfo.commandBuffer;
+        submitCmdBuffer.pCommandBuffers = &vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame];
         submitCmdBuffer.signalSemaphoreCount = 1;
-        submitCmdBuffer.pSignalSemaphores = &vulkanProgramInfo.renderFinishedSemaphore;
+        submitCmdBuffer.pSignalSemaphores = &vulkanProgramInfo.renderFinishedSemaphores[vulkanProgramInfo.curr_frame];
 
         vkResult = vkQueueSubmit(vulkanProgramInfo.graphicsQueue,
                                  1,
                                  &submitCmdBuffer,
-                                 vulkanProgramInfo.frameReadyFence);
+                                 vulkanProgramInfo.frameReadyFences[vulkanProgramInfo.curr_frame]);
 
         checkVkResult(vkResult, "Failed to submit command buffer");
 
@@ -783,7 +791,7 @@ private:
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = &vulkanProgramInfo.renderFinishedSemaphore;
+        presentInfo.pWaitSemaphores = &vulkanProgramInfo.renderFinishedSemaphores[vulkanProgramInfo.curr_frame];
         presentInfo.pImageIndices = renderedImageIndices;
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = &vulkanProgramInfo.swapchain;
@@ -799,23 +807,27 @@ private:
         {
             glfwPollEvents();
             drawFrame();
+            vulkanProgramInfo.curr_frame = (vulkanProgramInfo.curr_frame + 1) % MAX_FRAMES_IN_FLIGHT;
         }
         vkDeviceWaitIdle(vulkanProgramInfo.renderDevice);
     }
 
     void cleanup() const
     {
-        vkDestroySemaphore(vulkanProgramInfo.renderDevice,
-                           vulkanProgramInfo.renderFinishedSemaphore,
-                           nullptr);
+        for (std::size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        {
+            vkDestroySemaphore(vulkanProgramInfo.renderDevice,
+                               vulkanProgramInfo.renderFinishedSemaphores[i],
+                               nullptr);
 
-        vkDestroySemaphore(vulkanProgramInfo.renderDevice,
-                           vulkanProgramInfo.nextImageReadySemaphore,
-                           nullptr);
+            vkDestroySemaphore(vulkanProgramInfo.renderDevice,
+                               vulkanProgramInfo.nextImageReadySemaphores[i],
+                               nullptr);
 
-        vkDestroyFence(vulkanProgramInfo.renderDevice,
-                       vulkanProgramInfo.frameReadyFence,
-                       nullptr);
+            vkDestroyFence(vulkanProgramInfo.renderDevice,
+                           vulkanProgramInfo.frameReadyFences[i],
+                           nullptr);
+        }
 
         vkDestroyCommandPool(vulkanProgramInfo.renderDevice,
                              vulkanProgramInfo.commandPool,
