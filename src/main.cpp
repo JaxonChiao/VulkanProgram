@@ -1,4 +1,5 @@
 #define GLFW_INCLUDE_VULKAN
+// test
 
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
@@ -8,6 +9,8 @@
 #include <fstream>
 #include <cstring>
 #include <algorithm>
+#include "vertex.hpp"
+#include <glm/glm.hpp>
 
 const uint32_t windowWidth = 800;
 const uint32_t windowHeight = 600;
@@ -655,7 +658,7 @@ private:
                 nullptr,
                 vulkanProgramInfo.commandPool,
                 VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                MAX_FRAMES_IN_FLIGHT
+                (uint32_t) sizeof(vulkanProgramInfo.commandBuffers)
         };
 
         vkResult = vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice,
