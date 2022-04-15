@@ -10,9 +10,12 @@ set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
 add_executable(VulkanProgram src/main.cpp)
 
-# Add GLFW library
-add_subdirectory(GLFW)
+# Add glfw library
+add_subdirectory(glfw)
 target_link_libraries(VulkanProgram glfw)
+
+# Add glm library
+include_directories(glm)
 
 if (${CMAKE_SYSTEM_NAME} STREQUAL Darwin)
 
