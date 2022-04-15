@@ -658,7 +658,7 @@ private:
                 nullptr,
                 vulkanProgramInfo.commandPool,
                 VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                (uint32_t) sizeof(vulkanProgramInfo.commandBuffers)
+                (uint32_t) sizeof(vulkanProgramInfo.commandBuffers) / sizeof(VkCommandBuffer)
         };
 
         vkResult = vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice,
