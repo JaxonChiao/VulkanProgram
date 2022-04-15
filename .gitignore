@@ -8,6 +8,5 @@ run.sh
 cmake-build-vulkanprogram
 cmake-build-debug
 VulkanSDK
-GLFW/
 setup-env.sh
 
