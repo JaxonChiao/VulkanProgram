@@ -587,16 +587,6 @@ private:
         subpassDescription.pColorAttachments = &colorAttachmentReference;
         subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 
-        // Subpass dependency
-        VkSubpassDependency subpassDependency{};
-        subpassDependency.dependencyFlags = 0;
-        subpassDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        subpassDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        subpassDependency.srcAccessMask = 0;
-        subpassDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-        subpassDependency.dstSubpass = 0;
-
         // Render Pass create info
         VkRenderPassCreateInfo renderPassCreateInfo{};
         renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -604,8 +594,8 @@ private:
         renderPassCreateInfo.pAttachments = &colorAttachment;
         renderPassCreateInfo.pSubpasses = &subpassDescription;
         renderPassCreateInfo.subpassCount = 1;
-        renderPassCreateInfo.dependencyCount = 1;
-        renderPassCreateInfo.pDependencies = &subpassDependency;
+        renderPassCreateInfo.dependencyCount = 0;
+        renderPassCreateInfo.pDependencies = nullptr;
 
         vkResult = vkCreateRenderPass(vulkanProgramInfo.renderDevice,
                                       &renderPassCreateInfo,
@@ -687,13 +677,14 @@ private:
         vkBeginCommandBuffer(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
                              &commandBufferBeginInfo);
 
+        vkCmdBindPipeline(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
+                          VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          vulkanProgramInfo.graphicsPipeline);
+
         vkCmdBeginRenderPass(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
                              &renderPassBeginInfo,
                              VK_SUBPASS_CONTENTS_INLINE);
 
-        vkCmdBindPipeline(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
-                          VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          vulkanProgramInfo.graphicsPipeline);
 
         vkCmdDraw(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
                   3,
