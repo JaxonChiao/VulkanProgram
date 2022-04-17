@@ -13,9 +13,16 @@ struct Vertex
 
 const std::vector<struct Vertex> vertices =
         {
-                {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-                {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-                {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+                {{0.0f,  -0.5f}, {1.0f, 0.0f, 0.0f}},
+                {{0.5f,  0.5f},  {0.0f, 1.0f, 0.0f}},
+                {{-0.5f, 0.5f},  {0.0f, 0.0f, 1.0f}}
+        };
+
+Vertex vertices_array[] =
+        {
+                {{0.0f,  -0.5f}, {1.0f, 0.0f, 0.0f}},
+                {{0.5f,  0.5f},  {0.0f, 1.0f, 0.0f}},
+                {{-0.5f, 0.5f},  {0.0f, 0.0f, 1.0f}}
         };
 
 #endif //VULKANPROGRAM_VERTEX_HPP

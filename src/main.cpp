@@ -47,6 +47,9 @@ public:
         createSwapchain();
         createSwapchainImageView();
 
+        // Create vertex buffer
+        createVertexBufferAndAllocateMemory();
+
         // Graphics pipeline
         createRenderPass();
         createGraphicsPipeline();
@@ -138,6 +141,9 @@ private:
                 {
                         VK_KHR_SWAPCHAIN_EXTENSION_NAME
                 };
+
+        VkBuffer vertexBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
 
     } vulkanProgramInfo;
 
@@ -420,6 +426,87 @@ private:
         }
     }
 
+    void createVertexBufferAndAllocateMemory()
+    {
+        VkBufferCreateInfo bufferCreateInfo{};
+        bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferCreateInfo.size = sizeof(vertices[0]) * vertices.size();
+        bufferCreateInfo.pNext = nullptr;
+        bufferCreateInfo.flags = 0;
+        bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        bufferCreateInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+
+
+        vkCreateBuffer(vulkanProgramInfo.renderDevice,
+                       &bufferCreateInfo,
+                       nullptr,
+                       &vulkanProgramInfo.vertexBuffer);
+
+        VkMemoryRequirements bufferMemoryRequirement;
+
+        vkGetBufferMemoryRequirements(vulkanProgramInfo.renderDevice,
+                                      vulkanProgramInfo.vertexBuffer,
+                                      &bufferMemoryRequirement);
+
+        VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
+        vkGetPhysicalDeviceMemoryProperties(vulkanProgramInfo.GPU,
+                                            &physicalDeviceMemoryProperties);
+
+        VkMemoryPropertyFlags memoryPropertyFlags =
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+        std::size_t suitableMemoryPropertyIndex;
+        bool foundSuitableMemoryType = false;
+
+        // Test if there is at least one required memory type satisfied
+        for (std::size_t i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; i++)
+        {
+            if (bufferMemoryRequirement.memoryTypeBits & (1 << i) &&
+                (physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags & memoryPropertyFlags) ==
+                memoryPropertyFlags)
+            {
+                suitableMemoryPropertyIndex = i;
+                foundSuitableMemoryType = true;
+                break;
+            }
+        }
+
+        if (!foundSuitableMemoryType)
+        {
+            std::cerr << "Cannot find suitable memory type for vertex buffer" << std::endl;
+            exit(1);
+        }
+
+        VkMemoryAllocateInfo vertexMemoryAlloInfo{};
+        vertexMemoryAlloInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        vertexMemoryAlloInfo.allocationSize = bufferMemoryRequirement.size;
+        vertexMemoryAlloInfo.memoryTypeIndex = suitableMemoryPropertyIndex;
+        vertexMemoryAlloInfo.pNext = nullptr;
+
+        vkAllocateMemory(vulkanProgramInfo.renderDevice,
+                         &vertexMemoryAlloInfo,
+                         nullptr,
+                         &vulkanProgramInfo.vertexBufferMemory);
+
+        vkBindBufferMemory(vulkanProgramInfo.renderDevice,
+                           vulkanProgramInfo.vertexBuffer,
+                           vulkanProgramInfo.vertexBufferMemory,
+                           0);
+
+        void *vertexBufferMemoryMapping = nullptr;
+
+        vkMapMemory(vulkanProgramInfo.renderDevice,
+                    vulkanProgramInfo.vertexBufferMemory,
+                    0,bufferMemoryRequirement.size,
+                    0,
+                    &vertexBufferMemoryMapping);
+
+        memcpy(vertexBufferMemoryMapping, vertices.data(), bufferMemoryRequirement.size);
+
+        vkUnmapMemory(vulkanProgramInfo.renderDevice,
+                      vulkanProgramInfo.vertexBufferMemory);
+    }
+
     void createGraphicsPipeline()
     {
         auto vertShaderCode = readFile("../src/spvShaders/vert.spv");
@@ -447,14 +534,39 @@ private:
         // Fixed functions
         // ===========================================================================
 
+        // Vertex Input Bind Description
+        VkVertexInputBindingDescription vertexInputBindingDescription{};
+        vertexInputBindingDescription.binding = 0;
+        vertexInputBindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        vertexInputBindingDescription.stride = sizeof(Vertex);
+
+        // Vertex Attribute Description
+        VkVertexInputAttributeDescription vertexInputPosition{};
+        vertexInputPosition.binding = 0;
+        vertexInputPosition.location = 0;
+        vertexInputPosition.format = VK_FORMAT_R32G32_SFLOAT;
+        vertexInputPosition.offset = offsetof(Vertex, pos);
+
+        VkVertexInputAttributeDescription vertexInputColor{};
+        vertexInputColor.binding = 0;
+        vertexInputColor.location = 1;
+        vertexInputColor.format = VK_FORMAT_R32G32B32_SFLOAT;
+        vertexInputColor.offset = offsetof(Vertex, color);
+
+        VkVertexInputAttributeDescription vertexInputAttributeDescriptions[] =
+                {
+                        vertexInputPosition,
+                        vertexInputColor
+                };
+
         // Vertex Input
         VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo{};
         vertexInputStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertexInputStateCreateInfo.pNext = nullptr;
-        vertexInputStateCreateInfo.pVertexAttributeDescriptions = nullptr;
-        vertexInputStateCreateInfo.pVertexBindingDescriptions = nullptr;
-        vertexInputStateCreateInfo.vertexAttributeDescriptionCount = 0;
-        vertexInputStateCreateInfo.vertexBindingDescriptionCount = 0;
+        vertexInputStateCreateInfo.pVertexAttributeDescriptions = vertexInputAttributeDescriptions;
+        vertexInputStateCreateInfo.pVertexBindingDescriptions = &vertexInputBindingDescription;
+        vertexInputStateCreateInfo.vertexAttributeDescriptionCount = 2;
+        vertexInputStateCreateInfo.vertexBindingDescriptionCount = 1;
 
         // Input Assembly
         VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo{};
@@ -685,9 +797,15 @@ private:
                              &renderPassBeginInfo,
                              VK_SUBPASS_CONTENTS_INLINE);
 
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
+                               0,
+                               1,
+                               &vulkanProgramInfo.vertexBuffer,
+                               offsets);
 
         vkCmdDraw(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
-                  3,
+                  vertices.size(),
                   1,
                   0,
                   0);
@@ -808,6 +926,14 @@ private:
 
     void cleanup() const
     {
+        vkFreeMemory(vulkanProgramInfo.renderDevice,
+                     vulkanProgramInfo.vertexBufferMemory,
+                     nullptr);
+
+        vkDestroyBuffer(vulkanProgramInfo.renderDevice,
+                        vulkanProgramInfo.vertexBuffer,
+                        nullptr);
+
         for (std::size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
             vkDestroySemaphore(vulkanProgramInfo.renderDevice,
