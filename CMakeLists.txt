@@ -14,7 +14,7 @@ add_executable(VulkanProgram src/main.cpp)
 add_subdirectory(glfw)
 target_link_libraries(VulkanProgram glfw)
 
-# Add glm library
+# Add glm include directory
 include_directories(glm)
 
 if (${CMAKE_SYSTEM_NAME} STREQUAL Darwin)

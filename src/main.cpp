@@ -11,6 +11,7 @@
 #include <algorithm>
 #include "vertex.hpp"
 #include <glm/glm.hpp>
+#include "vulkan_helpers.h"
 
 const uint32_t windowWidth = 800;
 const uint32_t windowHeight = 600;
@@ -47,6 +48,8 @@ public:
         createSwapchain();
         createSwapchainImageView();
 
+        // Drawing Commands
+        createCommandBuffers();
         // Create vertex buffer
         createVertexBufferAndAllocateMemory();
 
@@ -55,8 +58,6 @@ public:
         createGraphicsPipeline();
         createSwapchainFramebuffer();
 
-        // Drawing Commands
-        createCommandBuffers();
 
         // Synchronization Objects
         createSynchronizationObjects();
@@ -428,83 +429,107 @@ private:
 
     void createVertexBufferAndAllocateMemory()
     {
-        VkBufferCreateInfo bufferCreateInfo{};
-        bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferCreateInfo.size = sizeof(vertices[0]) * vertices.size();
-        bufferCreateInfo.pNext = nullptr;
-        bufferCreateInfo.flags = 0;
-        bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        bufferCreateInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        VkDeviceSize vertexBufferSize = sizeof(vertices[0]) * vertices.size();
 
+        VkBufferCreateInfo vertexBufferCreateInfo{};
+        vertexBufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        vertexBufferCreateInfo.size = vertexBufferSize;
+        vertexBufferCreateInfo.pNext = nullptr;
+        vertexBufferCreateInfo.flags = 0;
+        vertexBufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        vertexBufferCreateInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
-        vkCreateBuffer(vulkanProgramInfo.renderDevice,
-                       &bufferCreateInfo,
-                       nullptr,
-                       &vulkanProgramInfo.vertexBuffer);
+        VkBufferCreateInfo stagingBufferCreateInfo{};
+        stagingBufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        stagingBufferCreateInfo.size = vertexBufferSize;
+        stagingBufferCreateInfo.pNext = nullptr;
+        stagingBufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        stagingBufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        VkMemoryRequirements bufferMemoryRequirement;
+        createBuffer(vertexBufferCreateInfo,
+                     vulkanProgramInfo.renderDevice,
+                     vulkanProgramInfo.vertexBuffer,
+                     vulkanProgramInfo.GPU,
+                     vulkanProgramInfo.vertexBufferMemory,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-        vkGetBufferMemoryRequirements(vulkanProgramInfo.renderDevice,
-                                      vulkanProgramInfo.vertexBuffer,
-                                      &bufferMemoryRequirement);
+        VkBuffer vertexStagingBuffer;
+        VkDeviceMemory vertexStagingBufferMemory;
 
-        VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
-        vkGetPhysicalDeviceMemoryProperties(vulkanProgramInfo.GPU,
-                                            &physicalDeviceMemoryProperties);
+        createBuffer(stagingBufferCreateInfo,
+                     vulkanProgramInfo.renderDevice,
+                     vertexStagingBuffer,
+                     vulkanProgramInfo.GPU,
+                     vertexStagingBufferMemory,
+                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
-        VkMemoryPropertyFlags memoryPropertyFlags =
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
-        std::size_t suitableMemoryPropertyIndex;
-        bool foundSuitableMemoryType = false;
-
-        // Test if there is at least one required memory type satisfied
-        for (std::size_t i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; i++)
-        {
-            if (bufferMemoryRequirement.memoryTypeBits & (1 << i) &&
-                (physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags & memoryPropertyFlags) ==
-                memoryPropertyFlags)
-            {
-                suitableMemoryPropertyIndex = i;
-                foundSuitableMemoryType = true;
-                break;
-            }
-        }
-
-        if (!foundSuitableMemoryType)
-        {
-            std::cerr << "Cannot find suitable memory type for vertex buffer" << std::endl;
-            exit(1);
-        }
-
-        VkMemoryAllocateInfo vertexMemoryAlloInfo{};
-        vertexMemoryAlloInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        vertexMemoryAlloInfo.allocationSize = bufferMemoryRequirement.size;
-        vertexMemoryAlloInfo.memoryTypeIndex = suitableMemoryPropertyIndex;
-        vertexMemoryAlloInfo.pNext = nullptr;
-
-        vkAllocateMemory(vulkanProgramInfo.renderDevice,
-                         &vertexMemoryAlloInfo,
-                         nullptr,
-                         &vulkanProgramInfo.vertexBufferMemory);
-
-        vkBindBufferMemory(vulkanProgramInfo.renderDevice,
-                           vulkanProgramInfo.vertexBuffer,
-                           vulkanProgramInfo.vertexBufferMemory,
-                           0);
-
-        void *vertexBufferMemoryMapping = nullptr;
+        void *stagingBufferMemoryMapping = nullptr;
 
         vkMapMemory(vulkanProgramInfo.renderDevice,
-                    vulkanProgramInfo.vertexBufferMemory,
-                    0,bufferMemoryRequirement.size,
+                    vertexStagingBufferMemory,
                     0,
-                    &vertexBufferMemoryMapping);
+                    vertexBufferCreateInfo.size,
+                    0,
+                    &stagingBufferMemoryMapping);
 
-        memcpy(vertexBufferMemoryMapping, vertices.data(), bufferMemoryRequirement.size);
+        memcpy(stagingBufferMemoryMapping,
+               vertices.data(),
+               vertexBufferCreateInfo.size);
 
         vkUnmapMemory(vulkanProgramInfo.renderDevice,
-                      vulkanProgramInfo.vertexBufferMemory);
+                      vertexStagingBufferMemory);
+
+        // Copy buffer
+        VkCommandBufferAllocateInfo copyBufferCmdCreateInfo{};
+        copyBufferCmdCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        copyBufferCmdCreateInfo.commandBufferCount = 1;
+        copyBufferCmdCreateInfo.commandPool = vulkanProgramInfo.commandPool;
+        copyBufferCmdCreateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+        VkCommandBuffer copyBufferCmd;
+
+        vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice,
+                                 &copyBufferCmdCreateInfo,
+                                 &copyBufferCmd);
+
+        VkCommandBufferBeginInfo copyBufferCmdBeginInfo{};
+        copyBufferCmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        copyBufferCmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        vkBeginCommandBuffer(copyBufferCmd, &copyBufferCmdBeginInfo);
+
+        VkBufferCopy vertexBufferCopy{};
+        vertexBufferCopy.size = vertexBufferSize;
+        vertexBufferCopy.dstOffset = 0;
+        vertexBufferCopy.srcOffset = 0;
+
+        vkCmdCopyBuffer(copyBufferCmd,
+                        vertexStagingBuffer,
+                        vulkanProgramInfo.vertexBuffer,
+                        1,
+                        &vertexBufferCopy);
+
+        vkEndCommandBuffer(copyBufferCmd);
+
+        VkSubmitInfo copyBufferCommandSubmitInfo{};
+        copyBufferCommandSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        copyBufferCommandSubmitInfo.commandBufferCount = 1;
+        copyBufferCommandSubmitInfo.pCommandBuffers = &copyBufferCmd;
+
+        vkQueueSubmit(vulkanProgramInfo.graphicsQueue,
+                      1,
+                      &copyBufferCommandSubmitInfo,
+                      VK_NULL_HANDLE);
+
+        vkQueueWaitIdle(vulkanProgramInfo.graphicsQueue);
+
+        vkFreeMemory(vulkanProgramInfo.renderDevice,
+                     vertexStagingBufferMemory,
+                     nullptr);
+
+        vkDestroyBuffer(vulkanProgramInfo.renderDevice,
+                        vertexStagingBuffer,
+                        nullptr);
     }
 
     void createGraphicsPipeline()
