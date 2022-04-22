@@ -13,6 +13,7 @@
 #include <glm/glm.hpp>
 #include "vulkan_helpers.h"
 
+uint64_t frameCount = 0;
 const uint32_t windowWidth = 800;
 const uint32_t windowHeight = 600;
 const int MAX_FRAMES_IN_FLIGHT = 2;
@@ -50,8 +51,13 @@ public:
 
         // Drawing Commands
         createCommandBuffers();
+
+        // Preparing for graphics pipeline
         // Create vertex buffer
         createVertexBufferAndAllocateMemory();
+
+        // Create vertex index buffer
+        createIndexBuffer();
 
         // Graphics pipeline
         createRenderPass();
@@ -145,6 +151,11 @@ private:
 
         VkBuffer vertexBuffer = VK_NULL_HANDLE;
         VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
+        VkBuffer indexBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory indexBufferMemory = VK_NULL_HANDLE;
+
+        std::vector<VkBuffer> uniformBuffer;
+        std::vector<VkDeviceMemory> uniformBufferMemory;
 
     } vulkanProgramInfo;
 
@@ -532,6 +543,94 @@ private:
                         nullptr);
     }
 
+    void createIndexBuffer()
+    {
+        VkDeviceSize indexBufferSize = sizeof(vertex_indices[0]) * vertex_indices.size();
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+
+        VkBufferCreateInfo indexBufferCreateInfo{};
+        indexBufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        indexBufferCreateInfo.size = indexBufferSize;
+        indexBufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        indexBufferCreateInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        createBuffer(indexBufferCreateInfo,
+                     vulkanProgramInfo.renderDevice,
+                     vulkanProgramInfo.indexBuffer,
+                     vulkanProgramInfo.GPU,
+                     vulkanProgramInfo.indexBufferMemory,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        VkBufferCreateInfo stagingBufferCreateInfo{};
+        stagingBufferCreateInfo.size = indexBufferSize;
+        stagingBufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        stagingBufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        stagingBufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        createBuffer(stagingBufferCreateInfo,
+                     vulkanProgramInfo.renderDevice,
+                     stagingBuffer,
+                     vulkanProgramInfo.GPU,
+                     stagingBufferMemory,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        void *mappedMemoryData;
+        vkMapMemory(vulkanProgramInfo.renderDevice,
+                    stagingBufferMemory,
+                    0,
+                    indexBufferSize,
+                    0,
+                    &mappedMemoryData);
+        memcpy(mappedMemoryData, vertex_indices.data(), indexBufferSize);
+        vkUnmapMemory(vulkanProgramInfo.renderDevice,
+                      stagingBufferMemory);
+
+        VkCommandBuffer commandBuffer;
+
+        VkCommandBufferAllocateInfo commandBufferAllocateInfo{};
+        commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        commandBufferAllocateInfo.commandBufferCount = 1;
+        commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        commandBufferAllocateInfo.commandPool = vulkanProgramInfo.commandPool;
+
+        vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice,
+                                 &commandBufferAllocateInfo,
+                                 &commandBuffer);
+
+        VkCommandBufferBeginInfo commandBufferBeginInfo{};
+        commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        VkBufferCopy bufferCopy{};
+        bufferCopy.size = indexBufferSize;
+        bufferCopy.srcOffset = 0;
+        bufferCopy.dstOffset = 0;
+
+        vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+
+        vkCmdCopyBuffer(commandBuffer, stagingBuffer, vulkanProgramInfo.indexBuffer, 1, &bufferCopy);
+
+        vkEndCommandBuffer(commandBuffer);
+
+        VkSubmitInfo commandBufferSubmitInfo{};
+        commandBufferSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        commandBufferSubmitInfo.commandBufferCount = 1;
+        commandBufferSubmitInfo.pCommandBuffers = &commandBuffer;
+
+        vkQueueSubmit(vulkanProgramInfo.graphicsQueue,
+                      1,
+                      &commandBufferSubmitInfo,
+                      VK_NULL_HANDLE);
+
+        vkQueueWaitIdle(vulkanProgramInfo.graphicsQueue);
+
+        vkFreeMemory(vulkanProgramInfo.renderDevice,
+                     stagingBufferMemory,
+                     nullptr);
+        vkDestroyBuffer(vulkanProgramInfo.renderDevice,
+                        stagingBuffer,
+                        nullptr);
+    }
+
     void createGraphicsPipeline()
     {
         auto vertShaderCode = readFile("../src/spvShaders/vert.spv");
@@ -561,19 +660,19 @@ private:
 
         // Vertex Input Bind Description
         VkVertexInputBindingDescription vertexInputBindingDescription{};
-        vertexInputBindingDescription.binding = 0;
+        vertexInputBindingDescription.binding = 1;
         vertexInputBindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
         vertexInputBindingDescription.stride = sizeof(Vertex);
 
         // Vertex Attribute Description
         VkVertexInputAttributeDescription vertexInputPosition{};
-        vertexInputPosition.binding = 0;
+        vertexInputPosition.binding = 1;
         vertexInputPosition.location = 0;
         vertexInputPosition.format = VK_FORMAT_R32G32_SFLOAT;
         vertexInputPosition.offset = offsetof(Vertex, pos);
 
         VkVertexInputAttributeDescription vertexInputColor{};
-        vertexInputColor.binding = 0;
+        vertexInputColor.binding = 1;
         vertexInputColor.location = 1;
         vertexInputColor.format = VK_FORMAT_R32G32B32_SFLOAT;
         vertexInputColor.offset = offsetof(Vertex, color);
@@ -824,16 +923,30 @@ private:
 
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
-                               0,
+                               1,
                                1,
                                &vulkanProgramInfo.vertexBuffer,
                                offsets);
 
+        vkCmdBindIndexBuffer(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
+                             vulkanProgramInfo.indexBuffer,
+                             0,
+                             VK_INDEX_TYPE_UINT32);
+        /*
         vkCmdDraw(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
                   vertices.size(),
                   1,
                   0,
                   0);
+        */
+        frameCount++;
+
+        vkCmdDrawIndexed(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
+                         static_cast<uint32_t>(vertex_indices.size()),
+                         1,
+                         0,
+                         0,
+                         0);
 
         vkCmdEndRenderPass(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame]);
 
@@ -951,6 +1064,13 @@ private:
 
     void cleanup() const
     {
+        vkFreeMemory(vulkanProgramInfo.renderDevice,
+                     vulkanProgramInfo.indexBufferMemory,
+                     nullptr);
+        vkDestroyBuffer(vulkanProgramInfo.renderDevice,
+                        vulkanProgramInfo.indexBuffer,
+                        nullptr);
+
         vkFreeMemory(vulkanProgramInfo.renderDevice,
                      vulkanProgramInfo.vertexBufferMemory,
                      nullptr);
@@ -1339,4 +1459,5 @@ int main()
 {
     VulkanProgram program{};
     program.run();
+    std::cout << frameCount << std::endl;
 }
