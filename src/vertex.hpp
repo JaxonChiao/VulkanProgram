@@ -25,5 +25,10 @@ const std::vector<uint32_t> vertex_indices =
                 0, 1, 2, 0, 2, 3
         };
 
+struct UniformBufferObject {
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
+};
 
 #endif //VULKANPROGRAM_VERTEX_HPP

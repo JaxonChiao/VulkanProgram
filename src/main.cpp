@@ -11,9 +11,10 @@
 #include <algorithm>
 #include "vertex.hpp"
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <chrono>
 #include "vulkan_helpers.h"
 
-uint64_t frameCount = 0;
 const uint32_t windowWidth = 800;
 const uint32_t windowHeight = 600;
 const int MAX_FRAMES_IN_FLIGHT = 2;
@@ -51,6 +52,12 @@ public:
 
         // Drawing Commands
         createCommandBuffers();
+
+        // Uniform buffers
+        // Create Descriptor set which contains uniform buffers
+        createDescriptorSetLayout();
+        createUniformBuffer();
+        createDescriptorPool();
 
         // Preparing for graphics pipeline
         // Create vertex buffer
@@ -154,9 +161,11 @@ private:
         VkBuffer indexBuffer = VK_NULL_HANDLE;
         VkDeviceMemory indexBufferMemory = VK_NULL_HANDLE;
 
-        std::vector<VkBuffer> uniformBuffer;
-        std::vector<VkDeviceMemory> uniformBufferMemory;
-
+        std::vector<VkBuffer> uniformBuffers;
+        std::vector<VkDeviceMemory> uniformBufferMemories;
+        VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+        VkDescriptorPool descriptorPool;
+        std::vector<VkDescriptorSet> descriptorSets;
     } vulkanProgramInfo;
 
     void initVulkan()
@@ -729,6 +738,8 @@ private:
         rasterizationStateCreateInfo.lineWidth = 1.0f;
         rasterizationStateCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizationStateCreateInfo.rasterizerDiscardEnable = VK_FALSE;
+        rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizationStateCreateInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
         // Multisampling
         VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo{};
@@ -758,10 +769,10 @@ private:
         // Pipeline Layout
         VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{};
         pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
-        pipelineLayoutCreateInfo.pSetLayouts = nullptr;
         pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
-        pipelineLayoutCreateInfo.setLayoutCount = 0;
+        pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
+        pipelineLayoutCreateInfo.setLayoutCount = 1;
+        pipelineLayoutCreateInfo.pSetLayouts = &vulkanProgramInfo.descriptorSetLayout;
 
         // END of setting fixed function state
         vkResult = vkCreatePipelineLayout(vulkanProgramInfo.renderDevice,
@@ -939,7 +950,14 @@ private:
                   0,
                   0);
         */
-        frameCount++;
+        vkCmdBindDescriptorSets(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
+                                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                vulkanProgramInfo.pipelineLayout,
+                                0,
+                                1,
+                                &vulkanProgramInfo.descriptorSets[vulkanProgramInfo.curr_frame],
+                                0,
+                                nullptr);
 
         vkCmdDrawIndexed(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
                          static_cast<uint32_t>(vertex_indices.size()),
@@ -992,6 +1010,141 @@ private:
         }
     }
 
+    void createDescriptorSetLayout()
+    {
+        VkDescriptorSetLayoutBinding descriptorSetLayoutBinding{};
+        descriptorSetLayoutBinding.binding = 0;
+        descriptorSetLayoutBinding.descriptorCount = 1;
+        descriptorSetLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorSetLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo{};
+        descriptorSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        descriptorSetLayoutCreateInfo.bindingCount = 1;
+        descriptorSetLayoutCreateInfo.pBindings = &descriptorSetLayoutBinding;
+
+        vkCreateDescriptorSetLayout(vulkanProgramInfo.renderDevice,
+                                    &descriptorSetLayoutCreateInfo,
+                                    nullptr,
+                                    &vulkanProgramInfo.descriptorSetLayout);
+    }
+
+    void createUniformBuffer()
+    {
+        vulkanProgramInfo.uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+        vulkanProgramInfo.uniformBufferMemories.resize(MAX_FRAMES_IN_FLIGHT);
+
+        VkBufferCreateInfo uniformBufferCreateInfo{};
+        uniformBufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        uniformBufferCreateInfo.size = sizeof(UniformBufferObject);
+        uniformBufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        uniformBufferCreateInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+
+        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        {
+            createBuffer(uniformBufferCreateInfo,
+                         vulkanProgramInfo.renderDevice,
+                         vulkanProgramInfo.uniformBuffers[i],
+                         vulkanProgramInfo.GPU,
+                         vulkanProgramInfo.uniformBufferMemories[i],
+                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+        }
+
+    }
+
+    void updateUniformBuffer()
+    {
+        // Copied from vulkan-tutorial.com
+        static auto startTime = std::chrono::high_resolution_clock::now();
+
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+        UniformBufferObject ubo{};
+        ubo.model = glm::rotate(glm::mat4(1.0f),
+                                time * glm::radians(90.0f),
+                                glm::vec3(0.0f,
+                                          0.0f,
+                                          1.0f));
+
+        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
+                               glm::vec3(0.0f, 0.0f, 0.0f),
+                               glm::vec3(0.0f, 0.0f, 1.0f));
+
+        ubo.proj = glm::perspective(glm::radians(45.0f),
+                                    vulkanProgramInfo.swapchainExtent.width /
+                                    (float) vulkanProgramInfo.swapchainExtent.height,
+                                    0.1f,
+                                    10.0f);
+        ubo.proj[1][1] *= -1;
+        // End of copy
+        // I copied cuz I have no idea how to use glm or chrono lol
+
+        void *uniformMappedMemory;
+        vkMapMemory(vulkanProgramInfo.renderDevice,
+                    vulkanProgramInfo.uniformBufferMemories[vulkanProgramInfo.curr_frame],
+                    0,
+                    sizeof(ubo),
+                    0,
+                    &uniformMappedMemory);
+
+        memcpy(uniformMappedMemory, &ubo, sizeof(ubo));
+        vkUnmapMemory(vulkanProgramInfo.renderDevice,
+                      vulkanProgramInfo.uniformBufferMemories[vulkanProgramInfo.curr_frame]);
+    }
+
+    void createDescriptorPool()
+    {
+        VkDescriptorPoolSize poolSize{};
+        poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes = &poolSize;
+        poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+        vkResult = vkCreateDescriptorPool(vulkanProgramInfo.renderDevice,
+                                          &poolInfo,
+                                          nullptr,
+                                          &vulkanProgramInfo.descriptorPool);
+
+        checkVkResult(vkResult, "Failed to create Vulkan Descriptor Pool");
+
+        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, vulkanProgramInfo.descriptorSetLayout);
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = vulkanProgramInfo.descriptorPool;
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        allocInfo.pSetLayouts = layouts.data();
+
+        vulkanProgramInfo.descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+        if (vkAllocateDescriptorSets(vulkanProgramInfo.renderDevice, &allocInfo, vulkanProgramInfo.descriptorSets.data()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate descriptor sets!");
+        }
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            VkDescriptorBufferInfo bufferInfo{};
+            bufferInfo.buffer = vulkanProgramInfo.uniformBuffers[i];
+            bufferInfo.offset = 0;
+            bufferInfo.range = sizeof(UniformBufferObject);
+
+            VkWriteDescriptorSet descriptorWrite{};
+            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrite.dstSet = vulkanProgramInfo.descriptorSets[i];
+            descriptorWrite.dstBinding = 0;
+            descriptorWrite.dstArrayElement = 0;
+            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrite.descriptorCount = 1;
+            descriptorWrite.pBufferInfo = &bufferInfo;
+
+            vkUpdateDescriptorSets(vulkanProgramInfo.renderDevice, 1, &descriptorWrite, 0, nullptr);
+        }
+    }
+
     void drawFrame()
     {
         vkWaitForFences(vulkanProgramInfo.renderDevice,
@@ -1011,6 +1164,8 @@ private:
                               vulkanProgramInfo.nextImageReadySemaphores[vulkanProgramInfo.curr_frame],
                               VK_NULL_HANDLE,
                               &vulkanProgramInfo.activeSwapchainImage);
+
+        updateUniformBuffer();
 
         vkResetCommandBuffer(vulkanProgramInfo.commandBuffers[vulkanProgramInfo.curr_frame],
                              0);
@@ -1064,6 +1219,25 @@ private:
 
     void cleanup() const
     {
+        vkDestroyDescriptorPool(vulkanProgramInfo.renderDevice,
+                                vulkanProgramInfo.descriptorPool,
+                                nullptr);
+
+        // Uniform buffers
+        for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        {
+            vkDestroyBuffer(vulkanProgramInfo.renderDevice,
+                            vulkanProgramInfo.uniformBuffers[i],
+                            nullptr);
+
+            vkFreeMemory(vulkanProgramInfo.renderDevice,
+                         vulkanProgramInfo.uniformBufferMemories[i],
+                         nullptr);
+        }
+        vkDestroyDescriptorSetLayout(vulkanProgramInfo.renderDevice,
+                                     vulkanProgramInfo.descriptorSetLayout,
+                                     nullptr);
+
         vkFreeMemory(vulkanProgramInfo.renderDevice,
                      vulkanProgramInfo.indexBufferMemory,
                      nullptr);
@@ -1324,7 +1498,7 @@ private:
             }
         } else
         {
-            return std::clamp((uint32_t) 2,
+            return std::clamp((uint32_t) 3,
                               surfaceCapabilities.minImageCount,
                               surfaceCapabilities.maxImageCount);
         }
@@ -1459,5 +1633,4 @@ int main()
 {
     VulkanProgram program{};
     program.run();
-    std::cout << frameCount << std::endl;
 }
