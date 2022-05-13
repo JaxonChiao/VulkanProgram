@@ -10,4 +10,5 @@ cmake-build-debug
 VulkanSDK
 setup-env.sh
 GLFW/
-src/spvShaders/
+
+.vscode/
