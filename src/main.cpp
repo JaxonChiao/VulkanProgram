@@ -1,6 +1,5 @@
-#define GLFW_INCLUDE_VULKAN
-// test
-
+#include <array>
+#include <stdexcept>
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 #include <iostream>
@@ -9,15 +8,36 @@
 #include <fstream>
 #include <cstring>
 #include <algorithm>
+#include "glm/ext/matrix_transform.hpp"
 #include "vertex.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
+#include "vulkan/vulkan_core.h"
 #include "vulkan_helpers.h"
+#define  STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 const uint32_t windowWidth = 800;
 const uint32_t windowHeight = 600;
 const int MAX_FRAMES_IN_FLIGHT = 2;
+int direction = 0;
+
+void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+    if (key == GLFW_KEY_E && (action == GLFW_PRESS || action == GLFW_REPEAT))
+    {
+        direction = 1;
+    }
+    else if (key == GLFW_KEY_Y && (action == GLFW_PRESS || action == GLFW_REPEAT))
+    {
+        direction = -1;
+    }
+    else
+    {
+        direction = 0;
+    }
+}
 
 class VulkanProgram
 {
@@ -39,6 +59,9 @@ public:
         // Connect vulkan instance and window system
         createWindowAndSurface();
 
+        // glfw key inputs
+        glfwSetKeyCallback(vulkanProgramInfo.window, keyCallback);
+
         // Pick a physical device for rendering
         pickPhysicalDevice();
 
@@ -52,6 +75,10 @@ public:
 
         // Drawing Commands
         createCommandBuffers();
+
+        // Texture Images and its Image View
+        createTextureImage();
+        createTextureImageView();
 
         // Uniform buffers
         // Create Descriptor set which contains uniform buffers
@@ -74,6 +101,7 @@ public:
 
         // Synchronization Objects
         createSynchronizationObjects();
+
 
         // Program Loop
         programLoop();
@@ -166,6 +194,16 @@ private:
         VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
         VkDescriptorPool descriptorPool;
         std::vector<VkDescriptorSet> descriptorSets;
+
+        // Texture Images
+        VkImage textureImage;
+        VkDeviceMemory textureImageMemory;
+        VkImageView textureImageView;
+
+
+        // Image Sampler
+        VkSampler textureImageSampler = VK_NULL_HANDLE;
+
     } vulkanProgramInfo;
 
     void initVulkan()
@@ -225,6 +263,337 @@ private:
                                    physicalDevices.data());
 
         vulkanProgramInfo.GPU = physicalDevices[0];
+    }
+
+    void createTextureImage()
+    {
+        int texWidth, texHeight, texChannels;
+        stbi_uc *pixels = stbi_load("../img/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        VkDeviceSize imageSize = texWidth * texHeight * 4;
+
+        if (pixels == nullptr)
+        {
+            throw std::runtime_error("failed to read pixels from image");
+        }
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+       
+        VkBufferCreateInfo stagingBufferCreateInfo{};
+        stagingBufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        stagingBufferCreateInfo.queueFamilyIndexCount = 0;
+        stagingBufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        stagingBufferCreateInfo.size = imageSize;
+        stagingBufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+        vkCreateBuffer(vulkanProgramInfo.renderDevice, 
+                       &stagingBufferCreateInfo,
+                       nullptr,
+                       &stagingBuffer);
+
+        VkMemoryRequirements stagingBufferMemoryRequirements{};
+        vkGetBufferMemoryRequirements(vulkanProgramInfo.renderDevice,
+                                      stagingBuffer,
+                                      &stagingBufferMemoryRequirements);
+
+        VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
+        vkGetPhysicalDeviceMemoryProperties(vulkanProgramInfo.GPU,
+                                            &physicalDeviceMemoryProperties);
+
+        VkMemoryPropertyFlags suitableMemoryProperty = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+        VkMemoryAllocateInfo stagingBufferMemoryAllocateInfo{};
+        stagingBufferMemoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+
+        bool foundSuitableMemoryType = false;
+
+        for (int i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; i++)
+        {
+            VkMemoryPropertyFlags currMemoryTypePropertyFlag = 
+                physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags;
+
+            if ((stagingBufferMemoryRequirements.memoryTypeBits & (1 << i)) 
+                && 
+                (currMemoryTypePropertyFlag & suitableMemoryProperty) == suitableMemoryProperty)
+            {
+                stagingBufferMemoryAllocateInfo.memoryTypeIndex = i;
+                foundSuitableMemoryType = true;
+                break;
+            }
+        }
+
+        if (!foundSuitableMemoryType)
+        {
+            throw std::runtime_error("Failed to find suitable memory type");
+        }
+
+        stagingBufferMemoryAllocateInfo.allocationSize = stagingBufferMemoryRequirements.size;
+        stagingBufferMemoryAllocateInfo.pNext = nullptr;
+
+        vkAllocateMemory(vulkanProgramInfo.renderDevice,
+                         &stagingBufferMemoryAllocateInfo,
+                         nullptr,
+                         &stagingBufferMemory);
+
+        vkBindBufferMemory(vulkanProgramInfo.renderDevice,
+                           stagingBuffer,
+                           stagingBufferMemory,
+                           0);
+
+        void *stagingBufferMappedMemory;
+        vkMapMemory(vulkanProgramInfo.renderDevice,
+                    stagingBufferMemory,
+                    0,
+                    imageSize,
+                    0,
+                    &stagingBufferMappedMemory);
+        memcpy(stagingBufferMappedMemory, pixels, static_cast<size_t>(imageSize));
+        vkUnmapMemory(vulkanProgramInfo.renderDevice, stagingBufferMemory);
+        
+
+        // The above is for creating a staging buffer where its content will be transferred to an image obejct
+        // Next creating the image object as the recieving end of the image texture data
+
+
+        VkImageCreateInfo textureImageCreateInfo{};
+        textureImageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        textureImageCreateInfo.arrayLayers = 1;
+        textureImageCreateInfo.extent.depth = 1;
+        textureImageCreateInfo.extent.height = texHeight;
+        textureImageCreateInfo.extent.width = texWidth;
+        textureImageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+        textureImageCreateInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+        textureImageCreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        textureImageCreateInfo.mipLevels = 1;
+        textureImageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        textureImageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        textureImageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+
+        vkCreateImage(vulkanProgramInfo.renderDevice, &textureImageCreateInfo, nullptr, &vulkanProgramInfo.textureImage);
+
+        VkMemoryRequirements texImageMemoryRequirements;
+        vkGetImageMemoryRequirements(vulkanProgramInfo.renderDevice,
+                                     vulkanProgramInfo.textureImage,
+                                     &texImageMemoryRequirements);
+
+        VkMemoryAllocateInfo textureImageMemoryAllocateInfo{}; 
+        textureImageMemoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        textureImageMemoryAllocateInfo.allocationSize = texImageMemoryRequirements.size;
+        textureImageMemoryAllocateInfo.pNext = nullptr;
+
+        VkMemoryPropertyFlags suitableTexImageMemoryProperty = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+        foundSuitableMemoryType = false;
+        for (int i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; i++)
+        {
+            VkMemoryPropertyFlags currMemoryTypePropertyFlag 
+                = physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags;
+            if (texImageMemoryRequirements.memoryTypeBits & (1 << i) 
+                &&
+                (currMemoryTypePropertyFlag  & suitableTexImageMemoryProperty) == suitableTexImageMemoryProperty)
+            {
+                textureImageMemoryAllocateInfo.memoryTypeIndex = i;
+                foundSuitableMemoryType = true;
+            }
+        }
+
+        if (!foundSuitableMemoryType)
+        {
+            throw std::runtime_error("Failed to find suitable memory for texture image");
+        }
+
+        vkAllocateMemory(vulkanProgramInfo.renderDevice, &textureImageMemoryAllocateInfo, nullptr, &vulkanProgramInfo.textureImageMemory);
+        vkBindImageMemory(vulkanProgramInfo.renderDevice, vulkanProgramInfo.textureImage, vulkanProgramInfo.textureImageMemory, 0);
+
+        // Right here the image staing buffer is created and the destination image buffer is waiting for data
+        // to be copied from staging buffer.
+
+        // But before copying started, image needs to be in transfer layout
+        VkImageMemoryBarrier imageBarrierToTransfer{};
+        imageBarrierToTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        imageBarrierToTransfer.image = vulkanProgramInfo.textureImage;
+        imageBarrierToTransfer.srcAccessMask = 0;
+        imageBarrierToTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        imageBarrierToTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imageBarrierToTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imageBarrierToTransfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        imageBarrierToTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        imageBarrierToTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageBarrierToTransfer.subresourceRange.baseArrayLayer = 0;
+        imageBarrierToTransfer.subresourceRange.baseMipLevel = 0;
+        imageBarrierToTransfer.subresourceRange.layerCount = 1;
+        imageBarrierToTransfer.subresourceRange.levelCount = 1;
+
+        VkCommandBuffer transferImageLayoutForCopyingBuffer{};
+        VkCommandBufferAllocateInfo transferImageLayoutForCopyingBufferCreateInfo{};
+        transferImageLayoutForCopyingBufferCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        transferImageLayoutForCopyingBufferCreateInfo.commandPool = vulkanProgramInfo.commandPool;
+        transferImageLayoutForCopyingBufferCreateInfo.commandBufferCount = 1;
+        transferImageLayoutForCopyingBufferCreateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        
+        vkResult = vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice, &transferImageLayoutForCopyingBufferCreateInfo, &transferImageLayoutForCopyingBuffer);
+        checkVkResult(vkResult, "Failed to allocate command buffer");
+
+        VkCommandBufferBeginInfo transferImageLayoutForCopyingBufferBeginInfo{};
+        transferImageLayoutForCopyingBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        transferImageLayoutForCopyingBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        transferImageLayoutForCopyingBufferBeginInfo.pInheritanceInfo = nullptr;
+
+        vkResult = vkBeginCommandBuffer(transferImageLayoutForCopyingBuffer, &transferImageLayoutForCopyingBufferBeginInfo);
+        checkVkResult(vkResult, "Failed to begin buffer");
+
+        vkCmdPipelineBarrier(transferImageLayoutForCopyingBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                0,
+                0, nullptr,
+                0, nullptr,
+                1, &imageBarrierToTransfer);
+
+        vkEndCommandBuffer(transferImageLayoutForCopyingBuffer);
+
+        VkSubmitInfo transferImageLayoutForCopyingBufferSubmitInfo{};
+        transferImageLayoutForCopyingBufferSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        transferImageLayoutForCopyingBufferSubmitInfo.pCommandBuffers = &transferImageLayoutForCopyingBuffer;
+        transferImageLayoutForCopyingBufferSubmitInfo.commandBufferCount = 1;
+
+        vkQueueSubmit(vulkanProgramInfo.graphicsQueue, 1, &transferImageLayoutForCopyingBufferSubmitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(vulkanProgramInfo.graphicsQueue);
+
+        vkFreeCommandBuffers(vulkanProgramInfo.renderDevice, vulkanProgramInfo.commandPool, 1, &transferImageLayoutForCopyingBuffer);
+
+        // Above has done creating command buffer for layout transition for image recieving, create image barrier,
+        // recording barrier to pipeline and free command buffer
+        // Now the image layout is set for recieving all those texel data, copy those image data from staing buffer
+        // to our Vulkan image object.
+        VkCommandBuffer copyImageCommandBuffer;
+
+        VkCommandBufferAllocateInfo copyBufferCmdAllocateInfo{};
+        copyBufferCmdAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        copyBufferCmdAllocateInfo.commandPool = vulkanProgramInfo.commandPool;
+        copyBufferCmdAllocateInfo.commandBufferCount = 1;
+        copyBufferCmdAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        copyBufferCmdAllocateInfo.pNext = nullptr;
+
+        vkResult = vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice, &copyBufferCmdAllocateInfo, &copyImageCommandBuffer);
+        checkVkResult(vkResult, "Failed to create command buffer");
+
+        // After buffer is available, begin command buffer
+        VkCommandBufferBeginInfo copyImageBufferBeginInfo{};
+        copyImageBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        copyImageBufferBeginInfo.pInheritanceInfo = nullptr;
+        copyImageBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        
+        vkBeginCommandBuffer(copyImageCommandBuffer, &copyImageBufferBeginInfo);
+
+        VkBufferImageCopy texImageCopyRegion{};
+        texImageCopyRegion.bufferOffset = 0;
+        texImageCopyRegion.bufferRowLength = 0;
+        texImageCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        texImageCopyRegion.imageSubresource.baseArrayLayer = 0;
+        texImageCopyRegion.imageSubresource.layerCount = 1;
+        texImageCopyRegion.imageSubresource.mipLevel = 0;
+        texImageCopyRegion.imageOffset.x = 0;
+        texImageCopyRegion.imageOffset.y = 0;
+        texImageCopyRegion.imageOffset.z = 0;
+        texImageCopyRegion.imageExtent = {static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 1};
+
+        vkCmdCopyBufferToImage(copyImageCommandBuffer,
+                stagingBuffer,
+                vulkanProgramInfo.textureImage,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                1, &texImageCopyRegion);
+
+        vkEndCommandBuffer(copyImageCommandBuffer);
+
+        VkSubmitInfo copyImageBufferSubmitInfo{};
+        copyImageBufferSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        copyImageBufferSubmitInfo.commandBufferCount = 1;
+        copyImageBufferSubmitInfo.pCommandBuffers = &copyImageCommandBuffer;
+        
+        vkQueueSubmit(vulkanProgramInfo.graphicsQueue, 1, &copyImageBufferSubmitInfo, VK_NULL_HANDLE);
+
+        vkQueueWaitIdle(vulkanProgramInfo.graphicsQueue);
+
+        // Clean copy image command buffer
+        vkFreeCommandBuffers(vulkanProgramInfo.renderDevice, vulkanProgramInfo.commandPool, 1, &copyImageCommandBuffer);
+        // Destroy staging buffer and deallocate its memory
+        stbi_image_free(pixels);
+        vkDestroyBuffer(vulkanProgramInfo.renderDevice,
+                        stagingBuffer,
+                        nullptr);
+
+        vkFreeMemory(vulkanProgramInfo.renderDevice, stagingBufferMemory, nullptr);
+
+        // At this stage, Vulkan image sucessfully got its content ready. We just need to prepare its layout to be
+        // shader read ready.
+        VkImageMemoryBarrier transitionToShaderReadBarrier{};
+        transitionToShaderReadBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        transitionToShaderReadBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        transitionToShaderReadBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        transitionToShaderReadBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        transitionToShaderReadBarrier.image = vulkanProgramInfo.textureImage;
+        transitionToShaderReadBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        transitionToShaderReadBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        transitionToShaderReadBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        transitionToShaderReadBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT,
+                                                          0,
+                                                          1,
+                                                          0,
+                                                          1};
+
+        VkCommandBuffer transitionToShaderRead;
+        VkCommandBufferAllocateInfo transitionToShaderReadAllocateInfo{};
+        transitionToShaderReadAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        transitionToShaderReadAllocateInfo.commandPool = vulkanProgramInfo.commandPool;
+        transitionToShaderReadAllocateInfo.commandBufferCount = 1;
+        transitionToShaderReadAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+        vkResult = vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice, &transitionToShaderReadAllocateInfo, &transitionToShaderRead);
+        checkVkResult(vkResult, "Failed to allocate Command buffer");
+
+        VkCommandBufferBeginInfo transitionToShaderReadBeginInfo
+        {
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            nullptr,
+            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            nullptr
+        };
+
+        vkResult = vkBeginCommandBuffer(transitionToShaderRead, &transitionToShaderReadBeginInfo);
+        checkVkResult(vkResult, "Failed to begin");
+        
+        vkCmdPipelineBarrier(transitionToShaderRead,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                             0,
+                             0, nullptr,
+                             0, nullptr,
+                             1, &transitionToShaderReadBarrier);
+                             
+
+        vkEndCommandBuffer(transitionToShaderRead);
+
+        VkSubmitInfo transitionToShaderReadSubmitInfo
+        {
+            VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            nullptr,
+            0,
+            nullptr,
+            nullptr,
+            1,
+            &transitionToShaderRead,
+            0,
+            nullptr
+        };
+
+        vkResult = vkQueueSubmit(vulkanProgramInfo.graphicsQueue, 1, &transitionToShaderReadSubmitInfo, VK_NULL_HANDLE);
+        checkVkResult(vkResult, "Failed to submit");
+
+        vkQueueWaitIdle(vulkanProgramInfo.graphicsQueue);
+
+        // Free and destroy
+        vkFreeCommandBuffers(vulkanProgramInfo.renderDevice, vulkanProgramInfo.commandPool, 1, &transitionToShaderRead);
     }
 
     void createDeviceAndQueues()
@@ -296,6 +665,10 @@ private:
         graphicsQueueCreateInfo.pQueuePriorities = &graphicsQueuePriority;
         graphicsQueueCreateInfo.queueFamilyIndex = vulkanProgramInfo.graphicsQueueFamilyIndex;
 
+        // Enable device features
+        VkPhysicalDeviceFeatures enabledPhysicalDeviceFeatures{};
+        enabledPhysicalDeviceFeatures.samplerAnisotropy = VK_TRUE;
+
         // Logical device creat info
         VkDeviceCreateInfo renderDeviceCreateInfo{};
         renderDeviceCreateInfo.flags = 0;
@@ -304,7 +677,7 @@ private:
         renderDeviceCreateInfo.enabledExtensionCount = vulkanProgramInfo.deviceExtensionsEnabled.size();
         renderDeviceCreateInfo.ppEnabledExtensionNames = vulkanProgramInfo.deviceExtensionsEnabled.data();
         renderDeviceCreateInfo.enabledLayerCount = 0;
-        renderDeviceCreateInfo.pEnabledFeatures = nullptr;
+        renderDeviceCreateInfo.pEnabledFeatures = &enabledPhysicalDeviceFeatures;
         renderDeviceCreateInfo.pQueueCreateInfos = &graphicsQueueCreateInfo;
         renderDeviceCreateInfo.queueCreateInfoCount = 1;
 
@@ -329,7 +702,7 @@ private:
     void createWindowAndSurface()
     {
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+        glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
         vulkanProgramInfo.window = glfwCreateWindow(windowWidth,
                                                     windowHeight,
@@ -686,10 +1059,17 @@ private:
         vertexInputColor.format = VK_FORMAT_R32G32B32_SFLOAT;
         vertexInputColor.offset = offsetof(Vertex, color);
 
+        VkVertexInputAttributeDescription vertexInputTexCoord{};
+        vertexInputTexCoord.binding = 1;
+        vertexInputTexCoord.location = 2;
+        vertexInputTexCoord.format = VK_FORMAT_R32G32_SFLOAT;
+        vertexInputTexCoord.offset = offsetof(Vertex, texCoord);
+
         VkVertexInputAttributeDescription vertexInputAttributeDescriptions[] =
                 {
                         vertexInputPosition,
-                        vertexInputColor
+                        vertexInputColor,
+                        vertexInputTexCoord
                 };
 
         // Vertex Input
@@ -698,7 +1078,7 @@ private:
         vertexInputStateCreateInfo.pNext = nullptr;
         vertexInputStateCreateInfo.pVertexAttributeDescriptions = vertexInputAttributeDescriptions;
         vertexInputStateCreateInfo.pVertexBindingDescriptions = &vertexInputBindingDescription;
-        vertexInputStateCreateInfo.vertexAttributeDescriptionCount = 2;
+        vertexInputStateCreateInfo.vertexAttributeDescriptionCount = sizeof(vertexInputAttributeDescriptions) / sizeof(VkVertexInputAttributeDescription);;
         vertexInputStateCreateInfo.vertexBindingDescriptionCount = 1;
 
         // Input Assembly
@@ -1018,10 +1398,21 @@ private:
         descriptorSetLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         descriptorSetLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+        VkDescriptorSetLayoutBinding textureImageSamplerDescriptorBinding{};
+        textureImageSamplerDescriptorBinding.binding = 1;
+        textureImageSamplerDescriptorBinding.descriptorCount = 1;
+        textureImageSamplerDescriptorBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        textureImageSamplerDescriptorBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        std::array<VkDescriptorSetLayoutBinding, 2> descriptorSetLayoutBindings = 
+        {
+            descriptorSetLayoutBinding, textureImageSamplerDescriptorBinding
+        };
+
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo{};
         descriptorSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        descriptorSetLayoutCreateInfo.bindingCount = 1;
-        descriptorSetLayoutCreateInfo.pBindings = &descriptorSetLayoutBinding;
+        descriptorSetLayoutCreateInfo.bindingCount = static_cast<uint32_t>(descriptorSetLayoutBindings.size());
+        descriptorSetLayoutCreateInfo.pBindings = descriptorSetLayoutBindings.data();
 
         vkCreateDescriptorSetLayout(vulkanProgramInfo.renderDevice,
                                     &descriptorSetLayoutCreateInfo,
@@ -1063,11 +1454,7 @@ private:
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f),
-                                time * glm::radians(90.0f),
-                                glm::vec3(0.0f,
-                                          0.0f,
-                                          1.0f));
+        ubo.model = glm::rotate(glm::mat4(1.0f), 1.0f * time, glm::vec3(0.0f, 0.0f, 1.0f));
 
         ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
                                glm::vec3(0.0f, 0.0f, 0.0f),
@@ -1097,14 +1484,23 @@ private:
 
     void createDescriptorPool()
     {
-        VkDescriptorPoolSize poolSize{};
-        poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        VkDescriptorPoolSize uniformPoolSize{};
+        uniformPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uniformPoolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+        VkDescriptorPoolSize samplerPoolSize{};
+        samplerPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        samplerPoolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+        std::array<VkDescriptorPoolSize, 2> poolSizes = 
+        {
+            uniformPoolSize, samplerPoolSize
+        };
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.poolSizeCount = 1;
-        poolInfo.pPoolSizes = &poolSize;
+        poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+        poolInfo.pPoolSizes = poolSizes.data();
         poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
         vkResult = vkCreateDescriptorPool(vulkanProgramInfo.renderDevice,
@@ -1132,16 +1528,37 @@ private:
             bufferInfo.offset = 0;
             bufferInfo.range = sizeof(UniformBufferObject);
 
-            VkWriteDescriptorSet descriptorWrite{};
-            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrite.dstSet = vulkanProgramInfo.descriptorSets[i];
-            descriptorWrite.dstBinding = 0;
-            descriptorWrite.dstArrayElement = 0;
-            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            descriptorWrite.descriptorCount = 1;
-            descriptorWrite.pBufferInfo = &bufferInfo;
+            VkDescriptorImageInfo textureImageInfo{};
+            textureImageInfo.imageView = vulkanProgramInfo.textureImageView;
+            textureImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            textureImageInfo.sampler = vulkanProgramInfo.textureImageSampler;
 
-            vkUpdateDescriptorSets(vulkanProgramInfo.renderDevice, 1, &descriptorWrite, 0, nullptr);
+            VkWriteDescriptorSet descriptorWriteUniformBuffer{};
+            descriptorWriteUniformBuffer.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWriteUniformBuffer.dstSet = vulkanProgramInfo.descriptorSets[i];
+            descriptorWriteUniformBuffer.dstBinding = 0;
+            descriptorWriteUniformBuffer.dstArrayElement = 0;
+            descriptorWriteUniformBuffer.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWriteUniformBuffer.descriptorCount = 1;
+            descriptorWriteUniformBuffer.pBufferInfo = &bufferInfo;
+
+            VkWriteDescriptorSet descriptorWriteImage{};
+            descriptorWriteImage.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWriteImage.dstSet = vulkanProgramInfo.descriptorSets[i];
+            descriptorWriteImage.dstBinding = 1;
+            descriptorWriteImage.dstArrayElement = 0;
+            descriptorWriteImage.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            descriptorWriteImage.descriptorCount = 1;
+            descriptorWriteImage.pImageInfo = &textureImageInfo;
+
+            std::array<VkWriteDescriptorSet, 2> descriptorWrites = 
+            {
+                descriptorWriteUniformBuffer,
+                descriptorWriteImage
+            };
+
+            vkUpdateDescriptorSets(vulkanProgramInfo.renderDevice, 
+                    descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
         }
     }
 
@@ -1219,6 +1636,13 @@ private:
 
     void cleanup() const
     {
+        vkDestroySampler(vulkanProgramInfo.renderDevice, vulkanProgramInfo.textureImageSampler, nullptr);
+
+        // Destroy image and free image memory afterwards
+        vkDestroyImageView(vulkanProgramInfo.renderDevice, vulkanProgramInfo.textureImageView, nullptr);
+        vkDestroyImage(vulkanProgramInfo.renderDevice, vulkanProgramInfo.textureImage, nullptr);
+        vkFreeMemory(vulkanProgramInfo.renderDevice, vulkanProgramInfo.textureImageMemory, nullptr);
+
         vkDestroyDescriptorPool(vulkanProgramInfo.renderDevice,
                                 vulkanProgramInfo.descriptorPool,
                                 nullptr);
@@ -1625,6 +2049,54 @@ private:
         std::cout << "== Finished ==\n\n\n" << std::endl;
 
         return VK_FALSE;
+    }
+
+    void createTextureImageView()
+    {
+        // Create Image of texture image
+        VkImageViewCreateInfo textureImageViewCreateInfo{};
+        textureImageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        textureImageViewCreateInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+        textureImageViewCreateInfo.image = vulkanProgramInfo.textureImage;
+        textureImageViewCreateInfo.subresourceRange = 
+        {
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                0,
+                1,
+                0,
+                1
+        };
+        textureImageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+
+        vkCreateImageView(vulkanProgramInfo.renderDevice, &textureImageViewCreateInfo, nullptr, &vulkanProgramInfo.textureImageView);
+
+        // Create a image sampler which is actually independent from any image but the tutorial did separate these two
+        // as two functions so I will just do the same here
+        VkSamplerCreateInfo imageSamplerCreateInfo{};
+        imageSamplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        imageSamplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        imageSamplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        imageSamplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        imageSamplerCreateInfo.anisotropyEnable = VK_TRUE;
+        imageSamplerCreateInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        imageSamplerCreateInfo.compareEnable = VK_FALSE;
+        imageSamplerCreateInfo.magFilter = VK_FILTER_LINEAR;
+        imageSamplerCreateInfo.minFilter = VK_FILTER_LINEAR;
+        imageSamplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        imageSamplerCreateInfo.minLod = 0.0f;
+        imageSamplerCreateInfo.maxLod = 0.0f;
+        imageSamplerCreateInfo.mipLodBias = 0.0f;
+        imageSamplerCreateInfo.unnormalizedCoordinates = VK_FALSE;
+
+        VkPhysicalDeviceProperties physicalDeviceProperties{};
+        vkGetPhysicalDeviceProperties(vulkanProgramInfo.GPU, &physicalDeviceProperties);
+
+        imageSamplerCreateInfo.maxAnisotropy = physicalDeviceProperties.limits.maxSamplerAnisotropy;
+
+        vkCreateSampler(vulkanProgramInfo.renderDevice,
+                &imageSamplerCreateInfo, 
+                nullptr,
+                &vulkanProgramInfo.textureImageSampler);
     }
 };
 

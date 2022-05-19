@@ -17,6 +17,10 @@ target_link_libraries(VulkanProgram glfw)
 # Add glm include directory
 include_directories(glm)
 
+# Add stb_img include directory
+target_include_directories(VulkanProgram
+    PRIVATE stb)
+
 if (${CMAKE_SYSTEM_NAME} STREQUAL Darwin)
 
 	message("Building for macOS")
