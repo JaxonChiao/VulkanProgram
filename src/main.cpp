@@ -1,4 +1,5 @@
 #include <array>
+#include <ios>
 #include <stdexcept>
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
@@ -8,32 +9,38 @@
 #include <fstream>
 #include <cstring>
 #include <algorithm>
+#include "glm/ext/matrix_float4x4.hpp"
 #include "glm/ext/matrix_transform.hpp"
+#include "glm/ext/vector_float3.hpp"
 #include "vertex.hpp"
+
+#define  GLM_FORCE_RADIANS
+#define  GLM_FORCE_DEPTH_ZERO_TO_ONE
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
 #include "vulkan/vulkan_core.h"
 #include "vulkan_helpers.h"
+
 #define  STB_IMAGE_IMPLEMENTATION
+
 #include <stb_image.h>
 
 const uint32_t windowWidth = 800;
-const uint32_t windowHeight = 600;
+const uint32_t windowHeight = 800;
 const int MAX_FRAMES_IN_FLIGHT = 2;
 int direction = 0;
 
-void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
     if (key == GLFW_KEY_E && (action == GLFW_PRESS || action == GLFW_REPEAT))
     {
         direction = 1;
-    }
-    else if (key == GLFW_KEY_Y && (action == GLFW_PRESS || action == GLFW_REPEAT))
+    } else if (key == GLFW_KEY_Y && (action == GLFW_PRESS || action == GLFW_REPEAT))
     {
         direction = -1;
-    }
-    else
+    } else
     {
         direction = 0;
     }
@@ -76,6 +83,9 @@ public:
         // Drawing Commands
         createCommandBuffers();
 
+        // Depth buffer
+        createDepthBuffer();
+
         // Texture Images and its Image View
         createTextureImage();
         createTextureImageView();
@@ -96,6 +106,7 @@ public:
         // Graphics pipeline
         createRenderPass();
         createGraphicsPipeline();
+
         createSwapchainFramebuffer();
 
 
@@ -204,6 +215,11 @@ private:
         // Image Sampler
         VkSampler textureImageSampler = VK_NULL_HANDLE;
 
+        // The TRIFORCE !!!
+        VkImage depthImage = VK_NULL_HANDLE;
+        VkDeviceMemory depthImageMemory = VK_NULL_HANDLE;
+        VkImageView depthImageView = VK_NULL_HANDLE;
+
     } vulkanProgramInfo;
 
     void initVulkan()
@@ -278,7 +294,7 @@ private:
 
         VkBuffer stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
-       
+
         VkBufferCreateInfo stagingBufferCreateInfo{};
         stagingBufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         stagingBufferCreateInfo.queueFamilyIndexCount = 0;
@@ -286,7 +302,7 @@ private:
         stagingBufferCreateInfo.size = imageSize;
         stagingBufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
-        vkCreateBuffer(vulkanProgramInfo.renderDevice, 
+        vkCreateBuffer(vulkanProgramInfo.renderDevice,
                        &stagingBufferCreateInfo,
                        nullptr,
                        &stagingBuffer);
@@ -310,11 +326,11 @@ private:
 
         for (int i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; i++)
         {
-            VkMemoryPropertyFlags currMemoryTypePropertyFlag = 
-                physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags;
+            VkMemoryPropertyFlags currMemoryTypePropertyFlag =
+                    physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags;
 
-            if ((stagingBufferMemoryRequirements.memoryTypeBits & (1 << i)) 
-                && 
+            if ((stagingBufferMemoryRequirements.memoryTypeBits & (1 << i))
+                &&
                 (currMemoryTypePropertyFlag & suitableMemoryProperty) == suitableMemoryProperty)
             {
                 stagingBufferMemoryAllocateInfo.memoryTypeIndex = i;
@@ -350,7 +366,7 @@ private:
                     &stagingBufferMappedMemory);
         memcpy(stagingBufferMappedMemory, pixels, static_cast<size_t>(imageSize));
         vkUnmapMemory(vulkanProgramInfo.renderDevice, stagingBufferMemory);
-        
+
 
         // The above is for creating a staging buffer where its content will be transferred to an image obejct
         // Next creating the image object as the recieving end of the image texture data
@@ -370,14 +386,15 @@ private:
         textureImageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
         textureImageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 
-        vkCreateImage(vulkanProgramInfo.renderDevice, &textureImageCreateInfo, nullptr, &vulkanProgramInfo.textureImage);
+        vkCreateImage(vulkanProgramInfo.renderDevice, &textureImageCreateInfo, nullptr,
+                      &vulkanProgramInfo.textureImage);
 
         VkMemoryRequirements texImageMemoryRequirements;
         vkGetImageMemoryRequirements(vulkanProgramInfo.renderDevice,
                                      vulkanProgramInfo.textureImage,
                                      &texImageMemoryRequirements);
 
-        VkMemoryAllocateInfo textureImageMemoryAllocateInfo{}; 
+        VkMemoryAllocateInfo textureImageMemoryAllocateInfo{};
         textureImageMemoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         textureImageMemoryAllocateInfo.allocationSize = texImageMemoryRequirements.size;
         textureImageMemoryAllocateInfo.pNext = nullptr;
@@ -387,11 +404,11 @@ private:
         foundSuitableMemoryType = false;
         for (int i = 0; i < physicalDeviceMemoryProperties.memoryTypeCount; i++)
         {
-            VkMemoryPropertyFlags currMemoryTypePropertyFlag 
-                = physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags;
-            if (texImageMemoryRequirements.memoryTypeBits & (1 << i) 
+            VkMemoryPropertyFlags currMemoryTypePropertyFlag
+                    = physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags;
+            if (texImageMemoryRequirements.memoryTypeBits & (1 << i)
                 &&
-                (currMemoryTypePropertyFlag  & suitableTexImageMemoryProperty) == suitableTexImageMemoryProperty)
+                (currMemoryTypePropertyFlag & suitableTexImageMemoryProperty) == suitableTexImageMemoryProperty)
             {
                 textureImageMemoryAllocateInfo.memoryTypeIndex = i;
                 foundSuitableMemoryType = true;
@@ -403,8 +420,10 @@ private:
             throw std::runtime_error("Failed to find suitable memory for texture image");
         }
 
-        vkAllocateMemory(vulkanProgramInfo.renderDevice, &textureImageMemoryAllocateInfo, nullptr, &vulkanProgramInfo.textureImageMemory);
-        vkBindImageMemory(vulkanProgramInfo.renderDevice, vulkanProgramInfo.textureImage, vulkanProgramInfo.textureImageMemory, 0);
+        vkAllocateMemory(vulkanProgramInfo.renderDevice, &textureImageMemoryAllocateInfo, nullptr,
+                         &vulkanProgramInfo.textureImageMemory);
+        vkBindImageMemory(vulkanProgramInfo.renderDevice, vulkanProgramInfo.textureImage,
+                          vulkanProgramInfo.textureImageMemory, 0);
 
         // Right here the image staing buffer is created and the destination image buffer is waiting for data
         // to be copied from staging buffer.
@@ -431,8 +450,10 @@ private:
         transferImageLayoutForCopyingBufferCreateInfo.commandPool = vulkanProgramInfo.commandPool;
         transferImageLayoutForCopyingBufferCreateInfo.commandBufferCount = 1;
         transferImageLayoutForCopyingBufferCreateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        
-        vkResult = vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice, &transferImageLayoutForCopyingBufferCreateInfo, &transferImageLayoutForCopyingBuffer);
+
+        vkResult = vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice,
+                                            &transferImageLayoutForCopyingBufferCreateInfo,
+                                            &transferImageLayoutForCopyingBuffer);
         checkVkResult(vkResult, "Failed to allocate command buffer");
 
         VkCommandBufferBeginInfo transferImageLayoutForCopyingBufferBeginInfo{};
@@ -440,15 +461,16 @@ private:
         transferImageLayoutForCopyingBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         transferImageLayoutForCopyingBufferBeginInfo.pInheritanceInfo = nullptr;
 
-        vkResult = vkBeginCommandBuffer(transferImageLayoutForCopyingBuffer, &transferImageLayoutForCopyingBufferBeginInfo);
+        vkResult = vkBeginCommandBuffer(transferImageLayoutForCopyingBuffer,
+                                        &transferImageLayoutForCopyingBufferBeginInfo);
         checkVkResult(vkResult, "Failed to begin buffer");
 
-        vkCmdPipelineBarrier(transferImageLayoutForCopyingBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 
-                VK_PIPELINE_STAGE_TRANSFER_BIT,
-                0,
-                0, nullptr,
-                0, nullptr,
-                1, &imageBarrierToTransfer);
+        vkCmdPipelineBarrier(transferImageLayoutForCopyingBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             0,
+                             0, nullptr,
+                             0, nullptr,
+                             1, &imageBarrierToTransfer);
 
         vkEndCommandBuffer(transferImageLayoutForCopyingBuffer);
 
@@ -457,10 +479,12 @@ private:
         transferImageLayoutForCopyingBufferSubmitInfo.pCommandBuffers = &transferImageLayoutForCopyingBuffer;
         transferImageLayoutForCopyingBufferSubmitInfo.commandBufferCount = 1;
 
-        vkQueueSubmit(vulkanProgramInfo.graphicsQueue, 1, &transferImageLayoutForCopyingBufferSubmitInfo, VK_NULL_HANDLE);
+        vkQueueSubmit(vulkanProgramInfo.graphicsQueue, 1, &transferImageLayoutForCopyingBufferSubmitInfo,
+                      VK_NULL_HANDLE);
         vkQueueWaitIdle(vulkanProgramInfo.graphicsQueue);
 
-        vkFreeCommandBuffers(vulkanProgramInfo.renderDevice, vulkanProgramInfo.commandPool, 1, &transferImageLayoutForCopyingBuffer);
+        vkFreeCommandBuffers(vulkanProgramInfo.renderDevice, vulkanProgramInfo.commandPool, 1,
+                             &transferImageLayoutForCopyingBuffer);
 
         // Above has done creating command buffer for layout transition for image recieving, create image barrier,
         // recording barrier to pipeline and free command buffer
@@ -475,7 +499,8 @@ private:
         copyBufferCmdAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         copyBufferCmdAllocateInfo.pNext = nullptr;
 
-        vkResult = vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice, &copyBufferCmdAllocateInfo, &copyImageCommandBuffer);
+        vkResult = vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice, &copyBufferCmdAllocateInfo,
+                                            &copyImageCommandBuffer);
         checkVkResult(vkResult, "Failed to create command buffer");
 
         // After buffer is available, begin command buffer
@@ -483,7 +508,7 @@ private:
         copyImageBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         copyImageBufferBeginInfo.pInheritanceInfo = nullptr;
         copyImageBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        
+
         vkBeginCommandBuffer(copyImageCommandBuffer, &copyImageBufferBeginInfo);
 
         VkBufferImageCopy texImageCopyRegion{};
@@ -499,10 +524,10 @@ private:
         texImageCopyRegion.imageExtent = {static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 1};
 
         vkCmdCopyBufferToImage(copyImageCommandBuffer,
-                stagingBuffer,
-                vulkanProgramInfo.textureImage,
-                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                1, &texImageCopyRegion);
+                               stagingBuffer,
+                               vulkanProgramInfo.textureImage,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               1, &texImageCopyRegion);
 
         vkEndCommandBuffer(copyImageCommandBuffer);
 
@@ -510,7 +535,7 @@ private:
         copyImageBufferSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         copyImageBufferSubmitInfo.commandBufferCount = 1;
         copyImageBufferSubmitInfo.pCommandBuffers = &copyImageCommandBuffer;
-        
+
         vkQueueSubmit(vulkanProgramInfo.graphicsQueue, 1, &copyImageBufferSubmitInfo, VK_NULL_HANDLE);
 
         vkQueueWaitIdle(vulkanProgramInfo.graphicsQueue);
@@ -549,20 +574,21 @@ private:
         transitionToShaderReadAllocateInfo.commandBufferCount = 1;
         transitionToShaderReadAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-        vkResult = vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice, &transitionToShaderReadAllocateInfo, &transitionToShaderRead);
+        vkResult = vkAllocateCommandBuffers(vulkanProgramInfo.renderDevice, &transitionToShaderReadAllocateInfo,
+                                            &transitionToShaderRead);
         checkVkResult(vkResult, "Failed to allocate Command buffer");
 
         VkCommandBufferBeginInfo transitionToShaderReadBeginInfo
-        {
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            nullptr,
-            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-            nullptr
-        };
+                {
+                        VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                        nullptr,
+                        VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+                        nullptr
+                };
 
         vkResult = vkBeginCommandBuffer(transitionToShaderRead, &transitionToShaderReadBeginInfo);
         checkVkResult(vkResult, "Failed to begin");
-        
+
         vkCmdPipelineBarrier(transitionToShaderRead,
                              VK_PIPELINE_STAGE_TRANSFER_BIT,
                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
@@ -570,22 +596,22 @@ private:
                              0, nullptr,
                              0, nullptr,
                              1, &transitionToShaderReadBarrier);
-                             
+
 
         vkEndCommandBuffer(transitionToShaderRead);
 
         VkSubmitInfo transitionToShaderReadSubmitInfo
-        {
-            VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            nullptr,
-            0,
-            nullptr,
-            nullptr,
-            1,
-            &transitionToShaderRead,
-            0,
-            nullptr
-        };
+                {
+                        VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                        nullptr,
+                        0,
+                        nullptr,
+                        nullptr,
+                        1,
+                        &transitionToShaderRead,
+                        0,
+                        nullptr
+                };
 
         vkResult = vkQueueSubmit(vulkanProgramInfo.graphicsQueue, 1, &transitionToShaderReadSubmitInfo, VK_NULL_HANDLE);
         checkVkResult(vkResult, "Failed to submit");
@@ -1050,7 +1076,7 @@ private:
         VkVertexInputAttributeDescription vertexInputPosition{};
         vertexInputPosition.binding = 1;
         vertexInputPosition.location = 0;
-        vertexInputPosition.format = VK_FORMAT_R32G32_SFLOAT;
+        vertexInputPosition.format = VK_FORMAT_R32G32B32_SFLOAT;
         vertexInputPosition.offset = offsetof(Vertex, pos);
 
         VkVertexInputAttributeDescription vertexInputColor{};
@@ -1078,7 +1104,8 @@ private:
         vertexInputStateCreateInfo.pNext = nullptr;
         vertexInputStateCreateInfo.pVertexAttributeDescriptions = vertexInputAttributeDescriptions;
         vertexInputStateCreateInfo.pVertexBindingDescriptions = &vertexInputBindingDescription;
-        vertexInputStateCreateInfo.vertexAttributeDescriptionCount = sizeof(vertexInputAttributeDescriptions) / sizeof(VkVertexInputAttributeDescription);;
+        vertexInputStateCreateInfo.vertexAttributeDescriptionCount =
+                sizeof(vertexInputAttributeDescriptions) / sizeof(VkVertexInputAttributeDescription);;
         vertexInputStateCreateInfo.vertexBindingDescriptionCount = 1;
 
         // Input Assembly
@@ -1120,6 +1147,15 @@ private:
         rasterizationStateCreateInfo.rasterizerDiscardEnable = VK_FALSE;
         rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
         rasterizationStateCreateInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+        // Depth and Stencil
+        VkPipelineDepthStencilStateCreateInfo depthStencilStateCreateInfo{};
+        depthStencilStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencilStateCreateInfo.depthTestEnable = VK_TRUE;
+        depthStencilStateCreateInfo.depthWriteEnable = VK_TRUE;
+        depthStencilStateCreateInfo.depthCompareOp = VK_COMPARE_OP_LESS;
+        depthStencilStateCreateInfo.depthBoundsTestEnable = VK_FALSE;
+        depthStencilStateCreateInfo.stencilTestEnable = VK_FALSE;
 
         // Multisampling
         VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo{};
@@ -1175,7 +1211,7 @@ private:
         graphicsPipelineCreateInfo.pDynamicState = nullptr;
         graphicsPipelineCreateInfo.pStages = shaderStages;
         graphicsPipelineCreateInfo.stageCount = 2;
-        graphicsPipelineCreateInfo.pDepthStencilState = nullptr;
+        graphicsPipelineCreateInfo.pDepthStencilState = &depthStencilStateCreateInfo;
         graphicsPipelineCreateInfo.pViewportState = &viewportStateCreateInfo;
         graphicsPipelineCreateInfo.subpass = 0;
 
@@ -1195,6 +1231,7 @@ private:
     void createRenderPass()
     {
         // Attachment description for render pass
+        // Color attachment
         VkAttachmentDescription colorAttachment{};
         colorAttachment.format = vulkanProgramInfo.swapchainImageFormat;
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -1203,22 +1240,44 @@ private:
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 
+        // Depth attachment
+        VkAttachmentDescription depthAttachment{};
+        depthAttachment.format = VK_FORMAT_D32_SFLOAT;
+        depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+
         // Attachment reference for subpass
+        // Color attachment reference for our first and only subpass in the render pass
         VkAttachmentReference colorAttachmentReference{};
         colorAttachmentReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         colorAttachmentReference.attachment = 0;
+
+        // Depth attachment reference for our first and only subpass in the render pass
+        VkAttachmentReference depthAttachmentReference{};
+        depthAttachmentReference.attachment = 1;
+        depthAttachmentReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
         // Subpass description
         VkSubpassDescription subpassDescription{};
         subpassDescription.colorAttachmentCount = 1;
         subpassDescription.pColorAttachments = &colorAttachmentReference;
         subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpassDescription.pDepthStencilAttachment = &depthAttachmentReference;
+
+        std::array<VkAttachmentDescription, 2> attachmentsForRenderPass =
+                {
+                        colorAttachment,
+                        depthAttachment
+                };
 
         // Render Pass create info
         VkRenderPassCreateInfo renderPassCreateInfo{};
         renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        renderPassCreateInfo.attachmentCount = 1;
-        renderPassCreateInfo.pAttachments = &colorAttachment;
+        renderPassCreateInfo.attachmentCount = static_cast<uint32_t>(attachmentsForRenderPass.size());
+        renderPassCreateInfo.pAttachments = attachmentsForRenderPass.data();
         renderPassCreateInfo.pSubpasses = &subpassDescription;
         renderPassCreateInfo.subpassCount = 1;
         renderPassCreateInfo.dependencyCount = 0;
@@ -1233,16 +1292,23 @@ private:
 
     void createSwapchainFramebuffer()
     {
+
         vulkanProgramInfo.swapchainFramebuffers.resize(vulkanProgramInfo.swapchainImages.size());
 
         // Create a Framebuffer for each image in swapchain
         for (std::size_t i = 0; i < vulkanProgramInfo.swapchainImages.size(); i++)
         {
+
+            std::array<VkImageView, 2> framebufferAttachments =
+                    {
+                            vulkanProgramInfo.swapchainImageViews[i],
+                            vulkanProgramInfo.depthImageView
+                    };
             VkFramebufferCreateInfo framebufferCreateInfo{};
             framebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
             framebufferCreateInfo.renderPass = vulkanProgramInfo.renderPass;
-            framebufferCreateInfo.pAttachments = &vulkanProgramInfo.swapchainImageViews[i];
-            framebufferCreateInfo.attachmentCount = 1;
+            framebufferCreateInfo.pAttachments = framebufferAttachments.data();
+            framebufferCreateInfo.attachmentCount = static_cast<uint32_t>(framebufferAttachments.size());
             framebufferCreateInfo.height = vulkanProgramInfo.swapchainExtent.height;
             framebufferCreateInfo.width = vulkanProgramInfo.swapchainExtent.width;
             framebufferCreateInfo.layers = 1;
@@ -1290,13 +1356,23 @@ private:
         commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         commandBufferBeginInfo.pInheritanceInfo = nullptr;
 
-        VkClearValue clearValue{{{0.0f, 0.0f, 0.0f, 1.0f}}};
+        VkClearValue colorClearValue{};
+        colorClearValue.color = {0.0f, 0.0f, 0.0f, 1.0f};
+
+        VkClearValue depthClearValue{};
+        depthClearValue.depthStencil = {1.0f, 0};
+
+        VkClearValue clearValues[2] =
+                {
+                        colorClearValue,
+                        depthClearValue
+                };
 
         VkRenderPassBeginInfo renderPassBeginInfo{};
         renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassBeginInfo.renderPass = vulkanProgramInfo.renderPass;
-        renderPassBeginInfo.pClearValues = &clearValue;
-        renderPassBeginInfo.clearValueCount = 1;
+        renderPassBeginInfo.pClearValues = clearValues;
+        renderPassBeginInfo.clearValueCount = 2;
         renderPassBeginInfo.framebuffer = vulkanProgramInfo.swapchainFramebuffers[vulkanProgramInfo.activeSwapchainImage];
         renderPassBeginInfo.renderArea.offset = {0, 0};
         renderPassBeginInfo.renderArea.extent = vulkanProgramInfo.swapchainExtent;
@@ -1404,10 +1480,10 @@ private:
         textureImageSamplerDescriptorBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         textureImageSamplerDescriptorBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-        std::array<VkDescriptorSetLayoutBinding, 2> descriptorSetLayoutBindings = 
-        {
-            descriptorSetLayoutBinding, textureImageSamplerDescriptorBinding
-        };
+        std::array<VkDescriptorSetLayoutBinding, 2> descriptorSetLayoutBindings =
+                {
+                        descriptorSetLayoutBinding, textureImageSamplerDescriptorBinding
+                };
 
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo{};
         descriptorSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -1456,16 +1532,14 @@ private:
         UniformBufferObject ubo{};
         ubo.model = glm::rotate(glm::mat4(1.0f), 1.0f * time, glm::vec3(0.0f, 0.0f, 1.0f));
 
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
-                               glm::vec3(0.0f, 0.0f, 0.0f),
-                               glm::vec3(0.0f, 0.0f, 1.0f));
-
+        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.proj = glm::perspective(glm::radians(45.0f),
                                     vulkanProgramInfo.swapchainExtent.width /
                                     (float) vulkanProgramInfo.swapchainExtent.height,
                                     0.1f,
                                     10.0f);
         ubo.proj[1][1] *= -1;
+
         // End of copy
         // I copied cuz I have no idea how to use glm or chrono lol
 
@@ -1492,10 +1566,10 @@ private:
         samplerPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         samplerPoolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
-        std::array<VkDescriptorPoolSize, 2> poolSizes = 
-        {
-            uniformPoolSize, samplerPoolSize
-        };
+        std::array<VkDescriptorPoolSize, 2> poolSizes =
+                {
+                        uniformPoolSize, samplerPoolSize
+                };
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1518,11 +1592,14 @@ private:
         allocInfo.pSetLayouts = layouts.data();
 
         vulkanProgramInfo.descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
-        if (vkAllocateDescriptorSets(vulkanProgramInfo.renderDevice, &allocInfo, vulkanProgramInfo.descriptorSets.data()) != VK_SUCCESS) {
+        if (vkAllocateDescriptorSets(vulkanProgramInfo.renderDevice, &allocInfo,
+                                     vulkanProgramInfo.descriptorSets.data()) != VK_SUCCESS)
+        {
             throw std::runtime_error("failed to allocate descriptor sets!");
         }
 
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        {
             VkDescriptorBufferInfo bufferInfo{};
             bufferInfo.buffer = vulkanProgramInfo.uniformBuffers[i];
             bufferInfo.offset = 0;
@@ -1551,14 +1628,14 @@ private:
             descriptorWriteImage.descriptorCount = 1;
             descriptorWriteImage.pImageInfo = &textureImageInfo;
 
-            std::array<VkWriteDescriptorSet, 2> descriptorWrites = 
-            {
-                descriptorWriteUniformBuffer,
-                descriptorWriteImage
-            };
+            std::array<VkWriteDescriptorSet, 2> descriptorWrites =
+                    {
+                            descriptorWriteUniformBuffer,
+                            descriptorWriteImage
+                    };
 
-            vkUpdateDescriptorSets(vulkanProgramInfo.renderDevice, 
-                    descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+            vkUpdateDescriptorSets(vulkanProgramInfo.renderDevice,
+                                   descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
         }
     }
 
@@ -1636,6 +1713,14 @@ private:
 
     void cleanup() const
     {
+        vkDestroyImage(vulkanProgramInfo.renderDevice,
+                       vulkanProgramInfo.depthImage,
+                       nullptr);
+        vkDestroyImageView(vulkanProgramInfo.renderDevice,
+                           vulkanProgramInfo.depthImageView,
+                           nullptr);
+        vkFreeMemory(vulkanProgramInfo.renderDevice, vulkanProgramInfo.depthImageMemory, nullptr);
+
         vkDestroySampler(vulkanProgramInfo.renderDevice, vulkanProgramInfo.textureImageSampler, nullptr);
 
         // Destroy image and free image memory afterwards
@@ -2058,17 +2143,18 @@ private:
         textureImageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         textureImageViewCreateInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
         textureImageViewCreateInfo.image = vulkanProgramInfo.textureImage;
-        textureImageViewCreateInfo.subresourceRange = 
-        {
-                VK_IMAGE_ASPECT_COLOR_BIT,
-                0,
-                1,
-                0,
-                1
-        };
+        textureImageViewCreateInfo.subresourceRange =
+                {
+                        VK_IMAGE_ASPECT_COLOR_BIT,
+                        0,
+                        1,
+                        0,
+                        1
+                };
         textureImageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 
-        vkCreateImageView(vulkanProgramInfo.renderDevice, &textureImageViewCreateInfo, nullptr, &vulkanProgramInfo.textureImageView);
+        vkCreateImageView(vulkanProgramInfo.renderDevice, &textureImageViewCreateInfo, nullptr,
+                          &vulkanProgramInfo.textureImageView);
 
         // Create a image sampler which is actually independent from any image but the tutorial did separate these two
         // as two functions so I will just do the same here
@@ -2076,7 +2162,7 @@ private:
         imageSamplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
         imageSamplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         imageSamplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        imageSamplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        imageSamplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
         imageSamplerCreateInfo.anisotropyEnable = VK_TRUE;
         imageSamplerCreateInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
         imageSamplerCreateInfo.compareEnable = VK_FALSE;
@@ -2094,9 +2180,94 @@ private:
         imageSamplerCreateInfo.maxAnisotropy = physicalDeviceProperties.limits.maxSamplerAnisotropy;
 
         vkCreateSampler(vulkanProgramInfo.renderDevice,
-                &imageSamplerCreateInfo, 
-                nullptr,
-                &vulkanProgramInfo.textureImageSampler);
+                        &imageSamplerCreateInfo,
+                        nullptr,
+                        &vulkanProgramInfo.textureImageSampler);
+    }
+
+    void createDepthBuffer()
+    {
+
+        // For Depth Buffer format, we simply choose VK_FORMAT_D32_SFLOAT
+        VkFormat depthBufferFormat = VK_FORMAT_D32_SFLOAT;
+
+        // Create depth image
+        VkImageCreateInfo depthImageCreateInfo{};
+        depthImageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        depthImageCreateInfo.format = depthBufferFormat;
+        depthImageCreateInfo.pNext = nullptr;
+        depthImageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        depthImageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+        depthImageCreateInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        depthImageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthImageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        depthImageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        depthImageCreateInfo.queueFamilyIndexCount = 0;
+        depthImageCreateInfo.extent = {vulkanProgramInfo.swapchainExtent.width,
+                                       vulkanProgramInfo.swapchainExtent.height,
+                                       1};
+        depthImageCreateInfo.arrayLayers = 1;
+        depthImageCreateInfo.mipLevels = 1;
+
+        vkCreateImage(vulkanProgramInfo.renderDevice, &depthImageCreateInfo, nullptr, &vulkanProgramInfo.depthImage);
+
+        VkMemoryRequirements depthImageMemoryRequirements;
+        vkGetImageMemoryRequirements(vulkanProgramInfo.renderDevice, vulkanProgramInfo.depthImage,
+                                     &depthImageMemoryRequirements);
+
+        // Allocate Image memory
+        VkMemoryAllocateInfo depthImageAllocateInfo{};
+        depthImageAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        depthImageAllocateInfo.allocationSize = depthImageMemoryRequirements.size;
+
+        VkPhysicalDeviceMemoryProperties memoryProperties;
+        vkGetPhysicalDeviceMemoryProperties(vulkanProgramInfo.GPU,
+                                            &memoryProperties);
+
+        bool foundCorrectMemoryType = false;
+        VkMemoryPropertyFlags depthImageMemoryProperty = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        for (int i = 0; i < memoryProperties.memoryTypeCount; i++)
+        {
+            if (depthImageMemoryRequirements.memoryTypeBits & (1 << i) &&
+                depthImageMemoryProperty & memoryProperties.memoryTypes[i].propertyFlags)
+            {
+                depthImageAllocateInfo.memoryTypeIndex = i;
+                foundCorrectMemoryType = true;
+            }
+        }
+
+        if (!foundCorrectMemoryType)
+        {
+            throw std::runtime_error("Failed to find suitable memory type for depth buffer");
+        }
+
+        vkAllocateMemory(vulkanProgramInfo.renderDevice, &depthImageAllocateInfo,
+                         nullptr, &vulkanProgramInfo.depthImageMemory);
+
+        // Bind Image and its corresponding memory together
+        vkBindImageMemory(vulkanProgramInfo.renderDevice,
+                          vulkanProgramInfo.depthImage,
+                          vulkanProgramInfo.depthImageMemory,
+                          0);
+
+        // Create Depth Image View
+        VkImageViewCreateInfo depthImageViewCreateInfo{};
+        depthImageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        depthImageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        depthImageViewCreateInfo.format = VK_FORMAT_D32_SFLOAT;
+        depthImageViewCreateInfo.image = vulkanProgramInfo.depthImage;
+        depthImageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        depthImageViewCreateInfo.subresourceRange.layerCount = 1;
+        depthImageViewCreateInfo.subresourceRange.levelCount = 1;
+        depthImageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
+        depthImageViewCreateInfo.subresourceRange.baseMipLevel = 0;
+
+        vkCreateImageView(vulkanProgramInfo.renderDevice,
+                          &depthImageViewCreateInfo,
+                          nullptr,
+                          &vulkanProgramInfo.depthImageView);
+
+        // Image created, Image View created and Image Memory allocated and binded
     }
 };
 
