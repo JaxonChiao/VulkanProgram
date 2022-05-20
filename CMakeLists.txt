@@ -21,6 +21,11 @@ include_directories(glm)
 target_include_directories(VulkanProgram
     PRIVATE stb)
 
+# Add tinyobjloader
+target_include_directories(VulkanProgram
+    PRIVATE tinyobjloader
+)
+
 if (${CMAKE_SYSTEM_NAME} STREQUAL Darwin)
 
 	message("Building for macOS")
