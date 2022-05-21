@@ -1,3 +1,8 @@
+#define  GLM_FORCE_RADIANS
+#define  GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define  TINYOBJLOADER_IMPLEMENTATION
+#define  STB_IMAGE_IMPLEMENTATION
+
 #include <array>
 #include <ios>
 #include <stdexcept>
@@ -13,36 +18,33 @@
 #include "glm/ext/matrix_transform.hpp"
 #include "glm/ext/vector_float3.hpp"
 #include "vertex.hpp"
-
-#define  GLM_FORCE_RADIANS
-#define  GLM_FORCE_DEPTH_ZERO_TO_ONE
-
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
 #include "vulkan/vulkan_core.h"
 #include "vulkan_helpers.h"
-
-#define  STB_IMAGE_IMPLEMENTATION
-
 #include <stb_image.h>
+#include <tiny_obj_loader.h>
 
 const uint32_t windowWidth = 800;
 const uint32_t windowHeight = 800;
 const int MAX_FRAMES_IN_FLIGHT = 2;
-int direction = 0;
+const std::string mesh_path = "../src/meshes/mesh.obj";
+const std::string mesh_texture_path = "../src/meshes/mesh_pic.png";
+
+std::vector<struct Vertex> vertices;
+std::vector<uint32_t> vertex_indices;
+
+float direction = 0;
 
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
     if (key == GLFW_KEY_E && (action == GLFW_PRESS || action == GLFW_REPEAT))
     {
-        direction = 1;
+        direction += 0.01f;
     } else if (key == GLFW_KEY_Y && (action == GLFW_PRESS || action == GLFW_REPEAT))
     {
-        direction = -1;
-    } else
-    {
-        direction = 0;
+        direction -= 0.01f;
     }
 }
 
@@ -98,6 +100,7 @@ public:
 
         // Preparing for graphics pipeline
         // Create vertex buffer
+        loadModel();
         createVertexBufferAndAllocateMemory();
 
         // Create vertex index buffer
@@ -284,7 +287,7 @@ private:
     void createTextureImage()
     {
         int texWidth, texHeight, texChannels;
-        stbi_uc *pixels = stbi_load("../img/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        stbi_uc *pixels = stbi_load(mesh_texture_path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
         VkDeviceSize imageSize = texWidth * texHeight * 4;
 
         if (pixels == nullptr)
@@ -1530,7 +1533,7 @@ private:
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f), 1.0f * time, glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.model = glm::rotate(glm::mat4(1.0f), 1.2f * direction, glm::vec3(0.0f, 0.0f, 1.0f));
 
         ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.proj = glm::perspective(glm::radians(45.0f),
@@ -2268,6 +2271,46 @@ private:
                           &vulkanProgramInfo.depthImageView);
 
         // Image created, Image View created and Image Memory allocated and binded
+    }
+
+    void loadModel()
+    {
+        tinyobj::attrib_t attrib;
+        std::vector<tinyobj::shape_t> shapes;
+        std::vector<tinyobj::material_t> materials;
+        std::string warn, err;
+
+        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, mesh_path.c_str()))
+        {
+            throw std::runtime_error(warn + err);
+        }
+        for (const auto &shape: shapes)
+        {
+            for (const auto &index: shape.mesh.indices)
+            {
+                Vertex vertex{};
+                vertex.pos = {
+                        attrib.vertices[3 * index.vertex_index + 0],
+                        attrib.vertices[3 * index.vertex_index + 1],
+                        attrib.vertices[3 * index.vertex_index + 2]
+                };
+
+                vertex.texCoord = {
+                        attrib.texcoords[2 * index.texcoord_index + 0],
+                        attrib.texcoords[2 * index.texcoord_index + 1]
+                };
+
+                vertex.color = {1.0f, 1.0f, 1.0f};
+                vertex.texCoord = 
+                {
+                    attrib.texcoords[2 * index.texcoord_index + 0],
+                    1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+                };
+
+                vertices.push_back(vertex);
+                vertex_indices.push_back(vertex_indices.size());
+            }
+        }
     }
 };
 
