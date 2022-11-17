@@ -12,3 +12,7 @@ setup-env.sh
 GLFW/
 .vscode/
 
+!VulkanSDK/macOS/lib/libvulkan.1.2.189.dylib
+!VulkanSDK/macOS/lib/libvulkan.1.dylib
+!VulkanSDK/macOS/lib/libvulkan.dylib
+
