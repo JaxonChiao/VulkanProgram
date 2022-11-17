@@ -1,3 +1,4 @@
+#include "glm/trigonometric.hpp"
 #define  GLM_FORCE_RADIANS
 #define  GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define  TINYOBJLOADER_IMPLEMENTATION
@@ -13,7 +14,6 @@
 #include <cstdlib>
 #include <fstream>
 #include <cstring>
-#include <algorithm>
 #include "glm/ext/matrix_float4x4.hpp"
 #include "glm/ext/matrix_transform.hpp"
 #include "glm/ext/vector_float3.hpp"
@@ -1533,9 +1533,19 @@ private:
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f), 1.2f * direction, glm::vec3(0.0f, 0.0f, 1.0f));
+        // center model
+        ubo.model = glm::translate(glm::mat4(1.0f), glm::vec3(.0f, 0.0f, -0.5f));
 
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        // Allow model to be place upright
+        ubo.model = ubo.model * glm::rotate(glm::mat4(1.0f), 3.14f / 2.0f, glm::vec3(1.0f, 0.0f, 0.0f));
+
+        // Allow model to face to the front
+        ubo.model = ubo.model * glm::rotate(glm::mat4(1.0f), 2.0f, glm::vec3(.0f, 1.0f, 0.0f));
+        
+        // Rotate model
+        ubo.model = ubo.model * glm::rotate(glm::mat4(1.0f), 1.0f * glm::sin(time), glm::vec3(0.0f, 1.0f, 0.0f));
+
+        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.proj = glm::perspective(glm::radians(45.0f),
                                     vulkanProgramInfo.swapchainExtent.width /
                                     (float) vulkanProgramInfo.swapchainExtent.height,
