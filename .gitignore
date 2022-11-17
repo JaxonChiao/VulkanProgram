@@ -7,14 +7,10 @@ compile_commands.json
 run.sh
 cmake-build-vulkanprogram
 cmake-build-debug
-VulkanSDK
 setup-env.sh
 GLFW/
 src/meshes/mesh1.obj
 src/meshes/mesh_pic1.png
 .vscode/
-!VulkanSDK/macOS/lib/libvulkan.1.2.189.dylib
-!VulkanSDK/macOS/lib/libvulkan.1.dylib
-!VulkanSDK/macOS/lib/libvulkan.dylib
-!VulkanSDK/macOS/include/
+/VulkanSDK/*
 
